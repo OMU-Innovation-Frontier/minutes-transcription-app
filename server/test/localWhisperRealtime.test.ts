@@ -1,9 +1,22 @@
 // @vitest-environment node
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { LocalWhisperRuntime, buildLocalWhisperArguments, type LocalWhisperJob } from '../src/providers/local/localWhisperRuntime';
+import {
+  LocalWhisperRuntime,
+  buildLocalWhisperArguments,
+  type LocalWhisperJob,
+  type LocalWhisperRecognitionResult,
+} from '../src/providers/local/localWhisperRuntime';
 import { LOCAL_PCM_MIME_TYPE, LocalWhisperServerProvider } from '../src/providers/local/localWhisperServerProvider';
 import { LocalSttError } from '../src/providers/local/localSttTypes';
-import { PcmUtteranceSegmenter, calculatePcm16Rms } from '../src/providers/local/pcmUtteranceSegmenter';
+import {
+  DEFAULT_VAD_CONFIGURATION,
+  PcmUtteranceSegmenter,
+  calculatePcm16Rms,
+} from '../src/providers/local/pcmUtteranceSegmenter';
+import type { RealtimeDebugAudioStore } from '../src/providers/local/realtimeDebugAudio';
 
 describe('PCM16 energy VAD and utterance boundaries', () => {
   it('calculates normalized PCM16 RMS as a pure function', () => {
@@ -100,6 +113,50 @@ describe('Local Whisper invocation and provider boundary', () => {
     const failed = new LocalWhisperServerProvider(unavailable, { vad: {} });
     await expect(failed.startSession({ sessionId: 'session-2', language: 'ja', mimeType: LOCAL_PCM_MIME_TYPE }))
       .rejects.toMatchObject({ code: 'local_model_hash_mismatch', safeMessage: 'Local Whisperモデルの整合性を確認できません。' });
+  });
+
+  it('removes the temporary WAV when optional debug capture fails', async () => {
+    const root = await mkdtemp(resolve(tmpdir(), 'minutes-stt-cleanup-'));
+    const temporaryRoot = resolve(root, 'temp/realtime');
+    await mkdir(temporaryRoot, { recursive: true });
+    const debugAudioStore = {
+      async capture(): Promise<never> { throw new Error('debug capture failed'); },
+    } as unknown as RealtimeDebugAudioStore;
+    const runtime = new LocalWhisperRuntime({
+      enabled: true,
+      modelId: 'small-q5_1',
+      root,
+      threads: 4,
+      maxQueueSize: 1,
+      maxSessions: 1,
+      processTimeoutMs: 1_000,
+      debugAudioStore,
+    });
+    const utterance = new PcmUtteranceSegmenter().accept(
+      0,
+      pcm([...samples(500, 0.2), ...samples(1_300, 0)]),
+    )[0]!;
+    const job: LocalWhisperJob = {
+      sessionId: 'cleanup-session',
+      utteranceId: 'cleanup-utterance',
+      language: 'ja',
+      utterance,
+      vadConfiguration: DEFAULT_VAD_CONFIGURATION,
+      createdAt: Date.now(),
+      onStarted() {},
+      onCompleted() {},
+      onError() {},
+    };
+    try {
+      const recognize = (runtime as unknown as {
+        recognize(job: LocalWhisperJob, queueWaitTimeMs: number, signal: AbortSignal): Promise<LocalWhisperRecognitionResult>;
+      }).recognize.bind(runtime);
+      await expect(recognize(job, 0, new AbortController().signal)).rejects.toThrow('debug capture failed');
+      expect(await readdir(temporaryRoot)).toEqual([]);
+    } finally {
+      await runtime.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

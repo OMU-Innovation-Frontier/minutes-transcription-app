@@ -1,9 +1,9 @@
 import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { ServerSpeechToTextProvider, SttEvaluationRecord } from './types.js';
+import type { SttEvaluationRecord, SttProvider } from './types.js';
 
 export interface SttEvaluationInput {
-  provider: ServerSpeechToTextProvider;
+  provider: SttProvider;
   model: string;
   sessionId: string;
   language: 'ja' | 'en';
@@ -53,7 +53,7 @@ export async function evaluateSttProvider(input: SttEvaluationInput, now: () => 
   } catch (error) {
     errorCode = error instanceof Error && 'code' in error ? String(error.code) : 'unknown';
   } finally {
-    await input.provider.closeSession(input.sessionId);
+    await input.provider.dispose();
   }
   const transcript = [...segments.values()]
     .filter((segment) => segment.isFinal)

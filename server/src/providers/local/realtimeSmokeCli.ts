@@ -111,7 +111,7 @@ async function main(): Promise<void> {
       ...lastMetrics,
     })}\n`);
   } finally {
-    await provider.closeSession(sessionId);
+    await provider.dispose();
     await runtime.close();
   }
 }

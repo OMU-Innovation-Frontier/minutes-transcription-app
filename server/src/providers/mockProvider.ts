@@ -1,8 +1,8 @@
 import type { WireLanguage } from '../../../shared/protocol.js';
 import type {
   ServerProviderError,
-  ServerSpeechToTextProvider,
-  ServerTranscriptResult,
+  SttProvider,
+  SttTranscriptResult,
 } from './types.js';
 
 const PHRASES: Record<WireLanguage, readonly (readonly string[])[]> = {
@@ -16,7 +16,7 @@ const PHRASES: Record<WireLanguage, readonly (readonly string[])[]> = {
   ],
 };
 
-export class MockServerSpeechToTextProvider implements ServerSpeechToTextProvider {
+export class MockServerSpeechToTextProvider implements SttProvider {
   readonly id = 'server-mock';
   private sessionId = '';
   private language: WireLanguage = 'ja';
@@ -26,7 +26,7 @@ export class MockServerSpeechToTextProvider implements ServerSpeechToTextProvide
   private currentText = '';
   private startTime = 0;
   private active = false;
-  private transcriptCallback: (result: ServerTranscriptResult) => void = () => undefined;
+  private transcriptCallback: (result: SttTranscriptResult) => void = () => undefined;
   private errorCallback: (error: ServerProviderError) => void = () => undefined;
 
   async startSession(options: {
@@ -105,13 +105,12 @@ export class MockServerSpeechToTextProvider implements ServerSpeechToTextProvide
     this.currentText = '';
   }
 
-  async closeSession(sessionId: string): Promise<void> {
-    if (sessionId !== this.sessionId) return;
+  async dispose(): Promise<void> {
     this.active = false;
     this.currentText = '';
   }
 
-  onTranscript(callback: (result: ServerTranscriptResult) => void): void {
+  onTranscript(callback: (result: SttTranscriptResult) => void): void {
     this.transcriptCallback = callback;
   }
 

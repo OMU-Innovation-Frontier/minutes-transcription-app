@@ -4,7 +4,7 @@ import {
   parseClientControlMessage,
   type ServerMessage,
 } from '../../shared/protocol.js';
-import { ServerProviderError, type ServerSpeechToTextProvider } from './providers/types.js';
+import { ServerProviderError, type SttProvider } from './providers/types.js';
 import { TranscriptionSessionRegistry } from './sessionRegistry.js';
 
 export interface SessionLimits {
@@ -27,7 +27,7 @@ export class TranscriptionWebSocketSession {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
-    provider: ServerSpeechToTextProvider,
+    provider: SttProvider,
     private readonly limits: SessionLimits,
     private readonly send: (message: ServerMessage) => void,
     private readonly terminate: () => void,
