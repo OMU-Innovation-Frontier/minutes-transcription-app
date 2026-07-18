@@ -1,0 +1,14 @@
+{
+  "cases": [
+    {
+      "language": "ja",
+      "reference": "本日はリアルタイム文字起こしシステムの動作確認を行います。音声認識の速度、精度、専門用語の認識結果を比較します。大阪公立大学では人工知能とロボット技術について研究しています。WebSocketとOpenVINOについても確認します。",
+      "hotwords": ["大阪公立大学", "人工知能", "音声認識", "WebSocket", "OpenVINO"]
+    },
+    {
+      "language": "en",
+      "reference": "Today, we are testing a real-time transcription system. We will compare recognition speed, accuracy, and technical vocabulary. Artificial intelligence and robotics are important fields of research. We will also test WebSocket, OpenVINO, and transcription.",
+      "hotwords": ["transcription", "artificial intelligence", "robotics", "WebSocket", "OpenVINO"]
+    }
+  ]
+}

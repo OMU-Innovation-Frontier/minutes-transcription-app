@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STT_EXTERNAL_ENABLED: 'false'
+      LOCAL_STT_ENABLED: 'false'
+      LOCAL_STT_DEBUG_AUDIO: 'false'
+      RUN_EXTERNAL_STT_TESTS: 'false'
+      RUN_LOCAL_STT_TESTS: 'false'
+      LLM_CORRECTION_ENABLED: 'false'
+      SUMMARY_ENABLED: 'false'
+    steps:
+      - name: Check out source without persisted credentials
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.12.0
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Test with local mocks only
+        run: pnpm test
+
+      - name: Build
+        run: pnpm run build

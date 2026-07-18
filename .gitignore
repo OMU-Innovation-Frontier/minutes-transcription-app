@@ -1,0 +1,47 @@
+# Dependencies and generated builds
+node_modules/
+dist/
+server/dist/
+coverage/
+*.tsbuildinfo
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Runtime data: recordings, transcripts, summaries, evaluations, and models
+server/data/
+# Kept explicitly for the Local STT safety contract and older Git clients/tools.
+server/data/local-stt/
+*.wav
+*.mp3
+*.m4a
+*.webm
+*.flac
+whisper-cli.exe
+ggml-*.bin
+*.metadata.json
+*.comparison-*.json
+*indexeddb-export*
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# Backups must stay outside version control
+*-backup-*/
+backup/
+backups/
+*.bak
+*.backup
+
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/

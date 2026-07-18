@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ja" data-app-view="home">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f7f3" />
+    <title>Minutes — 会議の記録</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <section id="home-view" class="app-view home-view" aria-labelledby="home-title">
+        <header class="home-header">
+          <a class="brand" href="#home-title" aria-label="Minutes ホーム">
+            <span class="brand__mark" aria-hidden="true">M</span>
+            <span>Minutes</span>
+          </a>
+          <button id="home-settings-button" class="quiet-button" type="button" aria-haspopup="dialog">設定</button>
+        </header>
+
+        <div id="home-connection-error" class="inline-alert" role="alert" hidden></div>
+
+        <main class="home-main">
+          <section class="home-hero" aria-labelledby="home-title">
+            <p class="eyebrow">MEETING NOTES, AS THEY HAPPEN</p>
+            <h1 id="home-title">会話に集中できる、<br />静かな議事録。</h1>
+            <p>会議を始めると、発言をその場で文字にして、原文を保ったまま読みやすく整えます。</p>
+            <button id="new-meeting-button" class="primary-action" type="button">
+              <span aria-hidden="true">＋</span> 新しい会議を始める
+            </button>
+            <div id="home-active-meeting" class="active-meeting" hidden>
+              <span class="recording-pulse" aria-hidden="true"></span>
+              <div><strong>進行中の会議があります</strong><span>録音と文字起こしの状態は保持されています</span></div>
+              <button id="resume-meeting-button" class="text-button" type="button">会議へ戻る</button>
+            </div>
+          </section>
+
+          <section class="meeting-history" aria-labelledby="history-title">
+            <div class="section-heading">
+              <div>
+                <p class="section-kicker">RECENT</p>
+                <h2 id="history-title">これまでの会議</h2>
+              </div>
+            </div>
+            <div id="home-history-empty" class="empty-state">
+              <strong>まだ保存された会議はありません</strong>
+              <p>新しい会議を始めると、終了した会議がこのページを開いている間だけここに表示されます。</p>
+            </div>
+            <ol id="meeting-history-list" class="history-list" hidden></ol>
+          </section>
+        </main>
+      </section>
+
+      <section id="meeting-view" class="app-view meeting-view" aria-labelledby="meeting-title" hidden aria-hidden="true">
+        <header class="meeting-header">
+          <button id="meeting-home-button" class="back-button" type="button" aria-label="ホームへ戻る">← <span>ホーム</span></button>
+          <div class="meeting-heading">
+            <p class="meeting-heading__label">LIVE MEETING</p>
+            <h1 id="meeting-title">新しい会議</h1>
+          </div>
+          <div class="meeting-header__status">
+            <div id="recording-status" class="meeting-state" role="status" aria-live="polite">
+              <span class="meeting-state__dot" aria-hidden="true"></span>
+              <span id="recording-status-label">会議開始前</span>
+            </div>
+            <time id="elapsed-time" class="meeting-timer">00:00</time>
+          </div>
+          <button id="meeting-settings-button" class="icon-button" type="button" aria-label="会議設定を開く" aria-haspopup="dialog">設定</button>
+          <button id="end-meeting-button" class="end-button" type="button">会議を終了</button>
+        </header>
+
+        <div id="transcript-scroll" class="meeting-scroll">
+          <div class="meeting-column">
+            <div class="connection-row">
+              <div id="recognition-status" class="connection-status" role="status" aria-live="polite">
+                <span class="connection-status__dot" aria-hidden="true"></span>
+                <span id="recognition-status-label">接続待ち</span>
+              </div>
+              <div id="connection-note" class="connection-note" role="status" hidden></div>
+            </div>
+            <div id="buffer-warning" class="inline-alert" role="alert" hidden></div>
+            <div id="error-message" class="inline-alert inline-alert--danger" role="alert" hidden></div>
+            <div id="correction-warning" class="inline-alert" role="alert" hidden></div>
+            <div id="summary-warning" class="inline-alert" role="alert" hidden></div>
+
+            <section class="live-summary" aria-labelledby="summary-title">
+              <div class="content-heading">
+                <div><p class="section-kicker">LIVE SUMMARY</p><h2 id="summary-title">ライブ要約</h2></div>
+                <span id="summary-provider-status" class="subtle-status">要約を確認中</span>
+              </div>
+              <details id="live-summary-details" class="summary-details" open>
+                <summary>現在の簡易要約</summary>
+                <div id="summary-empty" class="summary-empty">
+                  <p>会議内容が増えると、ここに簡易要約が表示されます。</p>
+                </div>
+                <div id="summary-content" class="summary-content" hidden>
+                  <p id="summary-topic" class="summary-topic"></p>
+                  <div class="summary-sections">
+                    <section><h3>要点</h3><ul id="summary-points"></ul></section>
+                    <section><h3>決まったこと</h3><ul id="summary-decisions"></ul></section>
+                    <section><h3>次に行うこと</h3><ul id="summary-actions"></ul></section>
+                    <section><h3>確認が必要なこと</h3><ul id="summary-questions"></ul></section>
+                  </div>
+                </div>
+              </details>
+            </section>
+
+            <section class="live-transcript" aria-labelledby="transcript-title">
+              <div class="content-heading transcript-heading">
+                <div><p class="section-kicker">TRANSCRIPT</p><h2 id="transcript-title">文字起こし</h2></div>
+              </div>
+              <p id="transcript-empty" class="transcript-empty">録音を始めると、ここに発言が表示されます。</p>
+              <ol id="final-transcript" class="transcript-list" aria-label="確定した文字起こし"></ol>
+              <div id="interim-transcript" class="interim-transcript" aria-live="polite" hidden>
+                <span>聞き取り中</span><p id="interim-text"></p>
+              </div>
+            </section>
+
+            <div class="meeting-scroll-spacer" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <button id="latest-transcript-button" class="latest-button" type="button" hidden>↓ 最新の発話へ戻る</button>
+        <div id="latest-announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+        <footer class="meeting-controls" aria-label="録音操作">
+          <div class="meeting-controls__inner">
+            <div class="microphone-level">
+              <span id="microphone-state">マイク待機中</span>
+              <div id="level-meter" class="level-meter" role="meter" aria-label="マイク入力レベル" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="level-bar" class="level-meter__bar"></div>
+              </div>
+              <output id="level-label" class="sr-only">0%</output>
+            </div>
+            <time id="elapsed-time-footer" class="control-timer">00:00</time>
+            <button id="start-button" class="control-button control-button--start" type="button">録音を開始</button>
+            <button id="stop-button" class="control-button" type="button" disabled>一時停止</button>
+            <button id="end-meeting-button-footer" class="control-button control-button--end" type="button">会議を終了</button>
+          </div>
+        </footer>
+      </section>
+
+      <section id="meeting-detail-view" class="app-view detail-view" aria-labelledby="detail-title" hidden aria-hidden="true">
+        <header class="detail-header">
+          <button id="detail-home-button" class="back-button" type="button">← ホーム</button>
+          <div class="brand brand--compact"><span class="brand__mark" aria-hidden="true">M</span><span>Minutes</span></div>
+        </header>
+        <main class="detail-main">
+          <p class="section-kicker">MEETING COMPLETE</p>
+          <h1 id="detail-title">新しい会議</h1>
+          <p id="detail-date" class="detail-date"></p>
+          <section class="detail-summary" aria-labelledby="detail-summary-title">
+            <h2 id="detail-summary-title">簡易要約</h2>
+            <p id="detail-summary-text">会議内容が増えると、ここに簡易要約が表示されます。</p>
+            <div id="final-summary" class="final-summary" hidden></div>
+          </section>
+          <section class="detail-transcript-section" aria-labelledby="detail-transcript-title">
+            <h2 id="detail-transcript-title">文字起こし全文</h2>
+            <p id="detail-transcript-empty" class="empty-state">文字起こしはありません。</p>
+            <ol id="detail-transcript" class="transcript-list transcript-list--detail"></ol>
+          </section>
+          <p class="persistence-note">この会議は現在のページを開いている間だけ保持されます。ページを再読み込みすると、会議一覧と全文は復元されません。</p>
+        </main>
+      </section>
+
+      <aside id="settings-panel" class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+        <div class="settings-panel__backdrop" aria-hidden="true"></div>
+        <div class="settings-panel__sheet">
+          <header><div><p class="section-kicker">SETTINGS</p><h2 id="settings-title">会議設定</h2></div><button id="settings-close-button" class="icon-button" type="button" aria-label="設定を閉じる">閉じる</button></header>
+          <label class="field"><span>会議タイトル</span><input id="meeting-title-input" type="text" value="新しい会議" maxlength="80" /></label>
+          <div class="settings-grid">
+            <label class="field"><span>文字起こし方法</span><select id="provider-select"><option value="browser">ブラウザー音声認識</option><option value="mock">モック認識（音声送信なし）</option><option value="websocket">WebSocketモック認識</option><option value="local-whisper">Local Whisper small（このPC）</option></select></label>
+            <label class="field"><span>言語</span><select id="language-select"><option value="ja-JP">日本語</option><option value="en-US">English</option></select></label>
+          </div>
+          <p id="privacy-note" class="privacy-copy"></p>
+
+          <details id="developer-settings" class="developer-settings">
+            <summary>開発者向け表示</summary>
+            <div class="developer-settings__content">
+              <div class="developer-status-grid">
+                <div><span>使用中の認識</span><strong id="provider-label">—</strong></div>
+                <div><span>音声チャンク</span><strong id="chunk-count">0</strong></div>
+                <div><span>未送信音声</span><strong id="buffered-audio">0秒</strong></div>
+                <div><span>再接続試行</span><strong id="reconnect-attempt">—</strong></div>
+              </div>
+              <div id="local-whisper-stats" class="developer-status-grid" hidden>
+                <div><span>モデル</span><strong id="local-whisper-model">whisper-small-q5_1</strong></div>
+                <div><span>言語</span><strong id="local-whisper-language">日本語</strong></div>
+                <div><span>認識待ち</span><strong id="local-whisper-queue">0</strong></div>
+                <div><span>音声時間</span><strong id="local-whisper-audio-duration">—</strong></div>
+                <div><span>処理時間</span><strong id="local-whisper-processing-time">—</strong></div>
+                <div><span>RTF</span><strong id="local-whisper-rtf">—</strong></div>
+              </div>
+              <div class="developer-actions">
+                <button id="reconnect-button" class="secondary-button" type="button" disabled>再接続</button>
+                <button id="finalize-sentence-button" class="secondary-button" type="button">現在の文を確定</button>
+                <button id="clear-transcript-button" class="secondary-button" type="button">全文をクリア</button>
+                <label class="field field--inline"><span>表示データ</span><select id="transcript-view"><option value="sentences">完成文</option><option value="raw">原文セグメント</option></select></label>
+              </div>
+              <div class="correction-overview">
+                <strong id="correction-status">LLM整文：確認中</strong>
+                <p id="correction-privacy">Local Whisperの音声認識はローカルです。整文設定を確認しています。</p>
+              </div>
+              <div class="developer-status-grid">
+                <div><span>要約入力トークン</span><strong id="usage-input">0</strong></div>
+                <div><span>要約出力トークン</span><strong id="usage-output">0</strong></div>
+                <div><span>推定API料金</span><strong id="usage-cost">未使用</strong></div>
+              </div>
+
+              <details class="local-evaluation" data-testid="local-evaluation-recorder">
+                <summary>ローカルSTT評価用録音</summary>
+                <p>文字起こし経路とは別に、ブラウザー内で16 kHz mono PCM WAVを生成する開発用機能です。</p>
+                <div class="developer-actions"><button id="local-record-ja" data-testid="local-record-ja" class="secondary-button" type="button">日本語録音</button><button id="local-record-en" data-testid="local-record-en" class="secondary-button" type="button">英語録音</button><button id="local-record-stop" data-testid="local-record-stop" class="secondary-button" type="button" disabled>録音停止</button></div>
+                <div class="developer-status-grid"><div><span>言語 / ファイル</span><strong id="local-record-language">未選択</strong></div><div><span>録音時間</span><output id="local-record-duration">00:00.0</output></div><div><span>状態</span><strong id="local-record-status" role="status" aria-live="polite">録音待ち</strong></div></div>
+                <div class="local-record-meter"><output id="local-record-level-label">0%</output><progress id="local-record-level" max="1" value="0" aria-label="評価録音の入力音量"></progress></div>
+                <article><h3>読み上げ文</h3><p id="local-record-prompt">言語を選ぶと読み上げ文を表示します。</p></article>
+                <div class="developer-status-grid"><div><span>WAV検証</span><strong id="local-record-validation">未検証</strong></div><div><span>簡易品質検査</span><strong id="local-record-quality">未測定</strong></div></div>
+                <audio id="local-record-player" controls hidden aria-label="評価用WAVの再生"></audio>
+                <button id="local-record-download" data-testid="local-record-download" class="secondary-button" type="button" disabled>WAVダウンロード</button>
+              </details>
+            </div>
+          </details>
+        </div>
+      </aside>
+
+      <section id="end-meeting-dialog" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="end-dialog-title" hidden>
+        <div class="confirm-dialog__backdrop" aria-hidden="true"></div>
+        <div class="confirm-dialog__body">
+          <p class="section-kicker">END MEETING</p>
+          <h2 id="end-dialog-title">この会議を終了しますか？</h2>
+          <p>文字起こし内容は現在のページを開いている間は保持されますが、本格的な会議履歴の保存はまだ実装されていません。</p>
+          <div class="confirm-dialog__actions"><button id="cancel-end-meeting-button" class="secondary-button" type="button">会議を続ける</button><button id="confirm-end-meeting-button" class="end-button" type="button">終了する</button></div>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
