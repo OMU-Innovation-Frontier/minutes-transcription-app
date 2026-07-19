@@ -27,6 +27,7 @@ import {
 import { presentFinalSummary, presentLiveSummary } from './ui/liveSummaryView';
 import { followStateAfterScroll, shouldFollowTranscriptUpdate } from './ui/scrollFollow';
 import { createRawSegmentElement, createSentenceElement } from './ui/transcriptView';
+import { buildMeetingSetupSummary, createInitialMeetingSetupDraft, createMeetingSettingsSnapshot, meetingTranscriptionCatalog, type MeetingSettingsSnapshot, type MeetingSetupDraft } from './meetingSetup/meetingSetup';
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -36,9 +37,24 @@ function requiredElement<T extends HTMLElement>(id: string): T {
 
 const elements = {
   homeView: requiredElement<HTMLElement>('home-view'),
+  meetingSetupView: requiredElement<HTMLElement>('meeting-setup-view'),
   meetingView: requiredElement<HTMLElement>('meeting-view'),
   meetingDetailView: requiredElement<HTMLElement>('meeting-detail-view'),
   newMeetingButton: requiredElement<HTMLButtonElement>('new-meeting-button'),
+  setupForm: requiredElement<HTMLFormElement>('meeting-setup-form'),
+  setupCancelButton: requiredElement<HTMLButtonElement>('setup-cancel-button'),
+  setupCancelSecondary: requiredElement<HTMLButtonElement>('setup-cancel-button-secondary'),
+  setupTitle: requiredElement<HTMLInputElement>('setup-title'),
+  setupLanguage: requiredElement<HTMLSelectElement>('setup-language'),
+  setupProvider: requiredElement<HTMLSelectElement>('setup-provider'),
+  setupProviderDescription: requiredElement<HTMLElement>('setup-provider-description'),
+  setupCorrection: requiredElement<HTMLInputElement>('setup-correction'),
+  setupLiveSummary: requiredElement<HTMLInputElement>('setup-live-summary'),
+  setupFinalSummary: requiredElement<HTMLInputElement>('setup-final-summary'),
+  setupExternalConfirmation: requiredElement<HTMLElement>('setup-external-confirmation'),
+  setupExternalAck: requiredElement<HTMLInputElement>('setup-external-ack'),
+  setupSummaryList: requiredElement<HTMLUListElement>('setup-summary-list'),
+  setupCreateButton: requiredElement<HTMLButtonElement>('setup-create-button'),
   resumeMeetingButton: requiredElement<HTMLButtonElement>('resume-meeting-button'),
   homeActiveMeeting: requiredElement<HTMLElement>('home-active-meeting'),
   homeHistoryEmpty: requiredElement<HTMLElement>('home-history-empty'),
@@ -132,6 +148,8 @@ let currentMeetingId = '';
 let meetingStartedAt: number | null = null;
 let meetingEndedAt: number | null = null;
 let meetingHasRecorded = false;
+let meetingSettingsSnapshot: MeetingSettingsSnapshot | null = null;
+let meetingSetupDraft: MeetingSetupDraft = createInitialMeetingSetupDraft();
 let reconnectAttempt = 0;
 let reconnectMaxAttempts = 0;
 let summaryCoordinator: IncrementalSummaryCoordinator | null = null;
@@ -171,6 +189,10 @@ const capture = new AudioCapture(transcriptionSink, {
 });
 
 elements.newMeetingButton.addEventListener('click', beginMeeting);
+elements.setupCancelButton.addEventListener('click', cancelMeetingSetup);
+elements.setupCancelSecondary.addEventListener('click', cancelMeetingSetup);
+elements.setupForm.addEventListener('submit', (event) => { event.preventDefault(); createMeetingFromSetup(); });
+for (const input of [elements.setupTitle, elements.setupLanguage, elements.setupProvider, elements.setupCorrection, elements.setupLiveSummary, elements.setupFinalSummary, elements.setupExternalAck]) input.addEventListener('input', renderMeetingSetup);
 elements.resumeMeetingButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'resume-meeting')));
 elements.meetingHomeButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'open-home')));
 elements.detailHomeButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'open-home')));
@@ -217,12 +239,35 @@ function beginMeeting(): void {
     return;
   }
   if (appState.meetingEnded) resetMeetingData();
+  meetingSetupDraft = createInitialMeetingSetupDraft(getDefaultProviderKind());
+  renderMeetingSetup();
+  setAppState(transitionAppView(appState, 'open-meeting-setup'));
+}
+
+function cancelMeetingSetup(): void {
+  meetingSetupDraft = createInitialMeetingSetupDraft(getDefaultProviderKind());
+  setAppState(transitionAppView(appState, 'cancel-meeting-setup'));
+}
+
+function renderMeetingSetup(): void {
+  meetingSetupDraft = { title: elements.setupTitle.value, language: elements.setupLanguage.value as MeetingSetupDraft['language'], transcriptionProvider: elements.setupProvider.value as MeetingSetupDraft['transcriptionProvider'], correctionEnabled: elements.setupCorrection.checked, liveSummaryEnabled: elements.setupLiveSummary.checked, finalSummaryEnabled: elements.setupFinalSummary.checked, historyRetention: 'page-session', externalProcessingAcknowledged: elements.setupExternalAck.checked };
+  const option = meetingTranscriptionCatalog.find((item) => item.id === meetingSetupDraft.transcriptionProvider);
+  elements.setupProviderDescription.textContent = option?.description ?? '';
+  elements.setupExternalConfirmation.hidden = !option?.externalAcknowledgementRequired;
+  elements.setupCreateButton.disabled = Boolean(option?.externalAcknowledgementRequired && !meetingSetupDraft.externalProcessingAcknowledged);
+  elements.setupSummaryList.replaceChildren(...buildMeetingSetupSummary(meetingSetupDraft).map((text) => { const li = document.createElement('li'); li.textContent = text; return li; }));
+}
+
+function createMeetingFromSetup(): void {
+  try { meetingSettingsSnapshot = createMeetingSettingsSnapshot(meetingSetupDraft, new Date().toISOString()); }
+  catch { elements.setupTitle.focus(); return; }
+  resetMeetingData();
   currentMeetingId = createSessionId();
-  meetingStartedAt = Date.now();
+  meetingStartedAt = null;
   meetingEndedAt = null;
-  updateMeetingTitle();
-  startElapsedTimer();
-  setAppState(transitionAppView(appState, 'start-meeting'));
+  elements.meetingTitle.textContent = meetingSettingsSnapshot.title;
+  elements.meetingTitleInput.value = meetingSettingsSnapshot.title;
+  setAppState(transitionAppView(appState, 'create-meeting'));
 }
 
 function resetMeetingData(): void {
@@ -248,7 +293,9 @@ function resetMeetingData(): void {
 
 async function startSession(): Promise<void> {
   if (sessionTransition || captureState !== 'idle' || appState.meetingEnded) return;
-  if (!appState.meetingStarted) beginMeeting();
+  if (!appState.meetingStarted || !meetingSettingsSnapshot) return;
+  meetingStartedAt ??= Date.now();
+  startElapsedTimer();
   setAppState({ ...appState, view: 'meeting' });
   sessionTransition = true;
   hideError();
@@ -261,16 +308,18 @@ async function startSession(): Promise<void> {
 
   currentSessionId = createSessionId();
   transcriptStore.startSession(currentSessionId);
-  correctionCoordinator = createCorrectionCoordinator(currentSessionId);
-  correctionCoordinators.push(correctionCoordinator);
-  correctionCoordinator.add(transcriptStore.snapshot().completedSentences);
-  void correctionCoordinator.initialize();
-  if (!summaryCoordinator) {
+  if (meetingSettingsSnapshot.correctionEnabled) {
+    correctionCoordinator = createCorrectionCoordinator(currentSessionId);
+    correctionCoordinators.push(correctionCoordinator);
+    correctionCoordinator.add(transcriptStore.snapshot().completedSentences);
+    void correctionCoordinator.initialize();
+  }
+  if (!summaryCoordinator && (meetingSettingsSnapshot.liveSummaryEnabled || meetingSettingsSnapshot.finalSummaryEnabled)) {
     summaryCoordinator = createSummaryCoordinator(currentMeetingId || currentSessionId);
     void summaryCoordinator.initialize();
   }
 
-  provider = createSpeechToTextProvider(elements.providerSelect.value as SpeechToTextProviderKind);
+  provider = createSpeechToTextProvider(meetingSettingsSnapshot.transcriptionProvider);
   renderProviderDetails();
   renderControls();
   try {
@@ -285,7 +334,7 @@ async function startSession(): Promise<void> {
 
   const startPromise = provider.start({
     sessionId: currentSessionId,
-    language: elements.languageSelect.value as TranscriptionLanguage,
+    language: meetingSettingsSnapshot.language as TranscriptionLanguage,
     audioFormat: capture.currentMimeType,
     callbacks: {
       onStateChange: renderTranscriptionState,
@@ -611,6 +660,7 @@ function setAppState(next: AppViewState): void {
   appState = next;
   applyAppView(appState.view, {
     home: elements.homeView,
+    meetingSetup: elements.meetingSetupView,
     meeting: elements.meetingView,
     meetingDetail: elements.meetingDetailView,
   });
