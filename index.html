@@ -137,7 +137,9 @@
           </div>
         </div>
 
-        <button id="latest-transcript-button" class="latest-button" type="button" hidden>↓ 最新の発話へ戻る</button>
+        <div class="meeting-scroll-actions">
+          <button id="latest-transcript-button" class="latest-button" type="button" hidden>↓ 最新の発話へ戻る</button>
+        </div>
         <div id="latest-announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
         <footer class="meeting-controls" aria-label="録音操作">
@@ -184,6 +186,7 @@
         <div class="settings-panel__backdrop" aria-hidden="true"></div>
         <div class="settings-panel__sheet">
           <header><div><p class="section-kicker">SETTINGS</p><h2 id="settings-title">会議設定</h2></div><button id="settings-close-button" class="icon-button" type="button" aria-label="設定を閉じる">閉じる</button></header>
+          <section id="meeting-settings-summary" class="meeting-settings-summary" hidden></section>
           <label class="field"><span>会議タイトル</span><input id="meeting-title-input" type="text" value="新しい会議" maxlength="80" /></label>
           <div class="settings-grid">
             <label class="field"><span>文字起こし方法</span><select id="provider-select"><option value="browser">ブラウザー音声認識</option><option value="mock">モック認識（音声送信なし）</option><option value="websocket">WebSocketモック認識</option><option value="local-whisper">Local Whisper small（このPC）</option></select></label>
