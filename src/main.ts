@@ -28,6 +28,7 @@ import { presentFinalSummary, presentLiveSummary } from './ui/liveSummaryView';
 import { followStateAfterScroll, shouldFollowTranscriptUpdate } from './ui/scrollFollow';
 import { createRawSegmentElement, createSentenceElement } from './ui/transcriptView';
 import { buildMeetingSetupSummary, createInitialMeetingSetupDraft, createMeetingSettingsSnapshot, meetingTranscriptionCatalog, type MeetingSettingsSnapshot, type MeetingSetupDraft } from './meetingSetup/meetingSetup';
+import { renderMeetingSettingsSummary } from './meetingSetup/meetingSettingsSummary';
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -66,6 +67,7 @@ const elements = {
   meetingSettingsButton: requiredElement<HTMLButtonElement>('meeting-settings-button'),
   settingsPanel: requiredElement<HTMLElement>('settings-panel'),
   settingsCloseButton: requiredElement<HTMLButtonElement>('settings-close-button'),
+  meetingSettingsSummary: requiredElement<HTMLElement>('meeting-settings-summary'),
   meetingTitle: requiredElement<HTMLElement>('meeting-title'),
   meetingTitleInput: requiredElement<HTMLInputElement>('meeting-title-input'),
   endMeetingButton: requiredElement<HTMLButtonElement>('end-meeting-button'),
@@ -267,6 +269,7 @@ function createMeetingFromSetup(): void {
   meetingEndedAt = null;
   elements.meetingTitle.textContent = meetingSettingsSnapshot.title;
   elements.meetingTitleInput.value = meetingSettingsSnapshot.title;
+  renderMeetingSettingsSummary(elements.meetingSettingsSummary, meetingSettingsSnapshot);
   setAppState(transitionAppView(appState, 'create-meeting'));
 }
 
@@ -820,6 +823,7 @@ function envNumber(name: keyof ImportMetaEnv, fallback: number): number {
 }
 
 renderProviderDetails();
+renderMeetingSettingsSummary(elements.meetingSettingsSummary, meetingSettingsSnapshot);
 setAppState(appState);
 renderCaptureState('idle');
 renderTranscriptionState('disconnected');

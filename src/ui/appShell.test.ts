@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 const html = readFileSync(resolve('index.html'), 'utf8');
 const mainSource = readFileSync(resolve('src/main.ts'), 'utf8');
+const styles = readFileSync(resolve('src/styles.css'), 'utf8');
 
 describe('application shell markup', () => {
   beforeEach(() => {
@@ -30,6 +31,29 @@ describe('application shell markup', () => {
     expect(controls?.querySelector('#start-button')).not.toBeNull();
     expect(controls?.querySelector('#stop-button')).not.toBeNull();
     expect(controls?.querySelector('#end-meeting-button-footer')).not.toBeNull();
+  });
+
+  it('keeps the latest-transcript action in a separate layout region above recording controls', () => {
+    const meetingView = document.querySelector('#meeting-view');
+    const actions = meetingView?.querySelector('.meeting-scroll-actions');
+    const controls = meetingView?.querySelector('.meeting-controls');
+    const latestButton = meetingView?.querySelector('#latest-transcript-button');
+
+    expect(actions?.contains(latestButton ?? null)).toBe(true);
+    expect(controls?.contains(latestButton ?? null)).toBe(false);
+    expect(actions?.parentElement).toBe(meetingView);
+  });
+
+  it('reserves a responsive layout row for the wrapping recording control bar', () => {
+    expect(styles).toMatch(/\.meeting-view\s*\{[^}]*grid-template-rows:\s*minmax\(0, 1fr\) auto;/su);
+    expect(styles).toMatch(/\.meeting-controls\s*\{[^}]*position:\s*relative;/su);
+    expect(styles).toMatch(/\.meeting-controls__inner\s*\{[^}]*flex-wrap:\s*wrap;/su);
+  });
+
+  it('keeps transcript-follow and recording control events wired', () => {
+    expect(mainSource).toContain("elements.latestTranscriptButton.addEventListener('click', scrollToLatestTranscript)");
+    expect(mainSource).toContain("elements.startButton.addEventListener('click', () => void startSession())");
+    expect(mainSource).toContain("elements.stopButton.addEventListener('click', () => void pauseSession())");
   });
 
   it('keeps developer controls closed by default', () => {
