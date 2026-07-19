@@ -27,7 +27,7 @@ See `../CLOUD_STT_PROVIDER_EVALUATION.md` for official sources, prices, privacy 
 
 If institutional account, billing and privacy approval is obtained, prototype **Alibaba Cloud Fun-ASR Realtime first**, using the Singapore international workspace and Free Quota Only. Retain **Qwen3-ASR-Flash Realtime as the second A/B candidate** on the same artificial Japanese corpus.
 
-This is not an Accepted production decision. It authorizes neither provider implementation nor an API call by itself.
+This is not an Accepted production decision. Phase 0 may implement an offline provider skeleton with a Fake Transport, but this ADR authorizes neither a live transport nor an API call.
 
 ## Rationale
 
@@ -57,6 +57,12 @@ Qwen realtime has the same price/quota and similarly direct protocol, but curren
 - Final only enters `rawText`, persistence and correction.
 
 ## Expected implementation shape if later approved
+
+### Phase 0 implementation status
+
+An offline Fun-ASR skeleton now implements the provider lifecycle, strict protocol parsing, partial/final mapping, `sentence_id` ordering, duplicate suppression, and in-memory usage limits. Automated tests inject a Fake Transport. No live WebSocket transport, credential handling, endpoint, workspace, account operation, or audio upload has been added. General users cannot select it in the UI.
+
+This work does not establish Japanese recognition accuracy and does not change the **Under evaluation** status. The counters reset on server restart and are not production billing enforcement.
 
 - Add a Fun-ASR `SttProvider` and a separate direct-WebSocket transport/parser.
 - Add allow-listed provider/model/region configuration and factory selection.

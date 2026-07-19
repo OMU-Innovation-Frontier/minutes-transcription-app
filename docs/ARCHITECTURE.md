@@ -26,6 +26,12 @@ Browser microphone
 
 ## STT
 
+### Fun-ASR Phase 0 boundary
+
+`server/src/providers/funAsr/` separates provider lifecycle, protocol runtime validation, the transport interface, and an in-memory usage guard. The provider accepts the existing 16 kHz mono PCM16 frames directly. `result-generated` partials update one stable segment and only ordered, non-empty finals cross the existing persistence/correction boundary. Per-session transcript bookkeeping is bounded, including a 256-entry final reorder buffer. At `task-finished`, a missing `sentence_id` produces a safe gap error and remaining buffered finals are emitted in numeric order before cleanup.
+
+Only tests supply a Fake Transport. Production runtime has no Alibaba endpoint, WebSocket implementation, credentials, or workspace configuration and therefore fails before networking. Usage is reserved as integer PCM frames before transport delivery; session/day/month/concurrent limits are process memory only and reset when the server restarts.
+
 サーバー上位層は`server/src/providers/types.ts`の`SttProvider`だけを扱います。共通境界は`SttSessionConfig`、`SttAudioChunk`、`SttTranscriptResult`、セッション停止、`dispose`を持ちます。生成は`server/src/providers/providerFactory.ts`へ集約しています。`STT_PROVIDER`未指定時は`local`、モデルなしのMock開発時だけ`mock`を明示します。未知の値は安全な設定エラーです。
 
 現在の実装はMockと`LocalWhisperServerProvider`です。Local provider内部だけがサーバーPC内の`whisper-cli.exe`、モデル、PCM VAD、FIFO、一時WAVを知ります。停止時はVAD残音をflushして処理完了を待ち、cancel、異常切断後のTTL失効、サーバー停止ではproviderを破棄します。Whisperプロセスはcancel/サーバー停止で終了し、一時WAVは成功・失敗のどちらでも削除します。

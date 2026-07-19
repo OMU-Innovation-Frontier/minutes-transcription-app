@@ -1,5 +1,11 @@
 # Minutes Transcription App
 
+## Fun-ASR Phase 0 (offline only)
+
+The server contains an offline-only Fun-ASR provider skeleton behind the existing `SttProvider` boundary. It validates protocol events, maps partial/final results, preserves `sentence_id` order, and applies in-memory audio usage limits. Tests inject a Fake Transport.
+
+There is no live Alibaba WebSocket transport, credential handling, endpoint, account setup, or external audio transmission. Selecting `STT_PROVIDER=fun-asr` in a normal runtime fails safely with `fun_asr_live_transport_unavailable`. It is not available to general users and is not a production adoption decision. Local Whisper and Mock remain unchanged.
+
 ブラウザーマイクの音声をリアルタイムに文字起こしし、会議中の発話を読みやすく確認するための議事録アプリです。Vite + TypeScriptのフロントエンドと、Node.js + TypeScript + WebSocketのバックエンドで構成されています。
 
 現在は一般公開前の開発段階です。団体内での少人数試験を検討していますが、認証、利用者分離、HTTPS、公開サーバー向け防御はまだありません。現在のバックエンドをそのままインターネットへ公開しないでください。

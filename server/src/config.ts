@@ -1,4 +1,4 @@
-export type SttProviderId = 'local' | 'mock';
+export type SttProviderId = 'local' | 'mock' | 'fun-asr';
 
 export class ServerConfigError extends Error {
   constructor(public readonly code: 'stt_provider_unsupported', message: string) {
@@ -30,6 +30,9 @@ export interface ServerConfig {
   sessionBudgetUsd?: number;
   monthlyBudgetUsd?: number;
   maxAudioSecondsPerSession?: number;
+  maxAudioSecondsPerDay?: number;
+  maxAudioSecondsPerMonth?: number;
+  maxConcurrentExternalSessions?: number;
   localSttEnabled: boolean;
   localSttModel: string;
   localSttThreads: number;
@@ -77,10 +80,25 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
     maxSessionSeconds: readOptionalNumber(env.STT_MAX_SESSION_SECONDS, 1, 86_400),
     sessionBudgetUsd: readOptionalNumber(env.STT_SESSION_BUDGET_USD, 0, Number.MAX_SAFE_INTEGER),
     monthlyBudgetUsd: readOptionalNumber(env.STT_MONTHLY_BUDGET_USD, 0, Number.MAX_SAFE_INTEGER),
-    maxAudioSecondsPerSession: readOptionalNumber(
+    maxAudioSecondsPerSession: readOptionalInteger(
       env.STT_MAX_AUDIO_SECONDS_PER_SESSION,
       1,
       86_400,
+    ),
+    maxAudioSecondsPerDay: readOptionalInteger(
+      env.STT_MAX_AUDIO_SECONDS_PER_DAY,
+      1,
+      2_592_000,
+    ),
+    maxAudioSecondsPerMonth: readOptionalInteger(
+      env.STT_MAX_AUDIO_SECONDS_PER_MONTH,
+      1,
+      31_536_000,
+    ),
+    maxConcurrentExternalSessions: readOptionalInteger(
+      env.STT_MAX_CONCURRENT_EXTERNAL_SESSIONS,
+      1,
+      1_000,
     ),
     localSttEnabled: readBoolean(env.LOCAL_STT_ENABLED, false),
     localSttModel: env.LOCAL_STT_MODEL?.trim() || 'small-q5_1',
@@ -117,9 +135,10 @@ function readSttProvider(value: string | undefined): SttProviderId {
   const configured = value?.trim().toLowerCase();
   if (!configured || configured === 'local' || configured === 'local-whisper') return 'local';
   if (configured === 'mock') return 'mock';
+  if (configured === 'fun-asr') return 'fun-asr';
   throw new ServerConfigError(
     'stt_provider_unsupported',
-    `Unsupported STT_PROVIDER value: ${configured}. Allowed values are local and mock.`,
+    `Unsupported STT_PROVIDER value: ${configured}. Allowed values are local, mock, and fun-asr.`,
   );
 }
 
@@ -154,5 +173,16 @@ function readOptionalNumber(
   if (value === undefined || value.trim() === '') return undefined;
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) return undefined;
+  return parsed;
+}
+
+function readOptionalInteger(
+  value: string | undefined,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) return undefined;
   return parsed;
 }
