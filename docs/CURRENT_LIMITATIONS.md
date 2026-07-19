@@ -42,3 +42,11 @@
 - 保護トークン検証は保守的な文字列規則で、意味の正しさを完全判定しない。
 - 法令・団体規則への完全準拠を保証するものではない。
 - 外部API、有料サービス、一般公開は事前合意と追加実装が必要。
+
+## Fun-ASR Phase 0 limitations
+
+- The Fun-ASR code is an offline protocol/provider skeleton tested only with a Fake Transport. No live WebSocket transport or API connection exists.
+- No API key, workspace, account, Free Quota Only setting, or payment configuration is used. The provider is not exposed in the user interface.
+- Japanese recognition accuracy, latency, billing behavior, retention, and deletion remain unverified.
+- Audio usage limits are in-memory integer counters. They do not survive a server restart and are not sufficient for production billing control.
+- Before any live phase, institutional ownership, Free Quota Only, consent UI, retention terms, and persistent usage enforcement require human approval. Local Whisper remains the fallback.

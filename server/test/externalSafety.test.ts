@@ -23,6 +23,7 @@ describe('external STT safety policy', () => {
     expect(loadServerConfig({ STT_PROVIDER: 'local' }).provider).toBe('local');
     expect(loadServerConfig({ STT_PROVIDER: 'local-whisper' }).provider).toBe('local');
     expect(loadServerConfig({ STT_PROVIDER: 'mock' }).provider).toBe('mock');
+    expect(loadServerConfig({ STT_PROVIDER: 'fun-asr' }).provider).toBe('fun-asr');
     expect(() => loadServerConfig({ STT_PROVIDER: 'unknown-cloud' })).toThrowError(
       expect.objectContaining({ code: 'stt_provider_unsupported' }),
     );
@@ -51,6 +52,33 @@ describe('external STT safety policy', () => {
     expect(defaults.localSttDebugAudioMaxBytes).toBe(500_000_000);
     expect(loadServerConfig({ LOCAL_STT_SILENCE_MS: '1600' }).localSttSilenceMs).toBe(1_600);
     expect(loadServerConfig({ LOCAL_STT_DEBUG_AUDIO: 'true' }).localSttDebugAudio).toBe(true);
+  });
+
+  it('accepts only bounded integers for external audio usage limits', () => {
+    const valid = loadServerConfig({
+      STT_MAX_AUDIO_SECONDS_PER_SESSION: '60',
+      STT_MAX_AUDIO_SECONDS_PER_DAY: '600',
+      STT_MAX_AUDIO_SECONDS_PER_MONTH: '6000',
+      STT_MAX_CONCURRENT_EXTERNAL_SESSIONS: '2',
+    });
+    expect(valid).toMatchObject({
+      maxAudioSecondsPerSession: 60,
+      maxAudioSecondsPerDay: 600,
+      maxAudioSecondsPerMonth: 6_000,
+      maxConcurrentExternalSessions: 2,
+    });
+    for (const invalid of ['0', '-1', 'NaN', '1.5', 'not-a-number', '999999999999999999999']) {
+      const config = loadServerConfig({
+        STT_MAX_AUDIO_SECONDS_PER_SESSION: invalid,
+        STT_MAX_AUDIO_SECONDS_PER_DAY: invalid,
+        STT_MAX_AUDIO_SECONDS_PER_MONTH: invalid,
+        STT_MAX_CONCURRENT_EXTERNAL_SESSIONS: invalid,
+      });
+      expect(config.maxAudioSecondsPerSession).toBeUndefined();
+      expect(config.maxAudioSecondsPerDay).toBeUndefined();
+      expect(config.maxAudioSecondsPerMonth).toBeUndefined();
+      expect(config.maxConcurrentExternalSessions).toBeUndefined();
+    }
   });
 
   it('does not estimate a configured monetary budget without registered pricing', () => {

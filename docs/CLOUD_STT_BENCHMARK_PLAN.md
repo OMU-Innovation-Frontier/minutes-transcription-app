@@ -81,10 +81,12 @@ Normalization must be defined before scoring. Keep two views: strict verbatim an
 
 ### Phase 0: offline harness
 
-1. Implement the provider behind a fake transport only after the provider ADR is approved.
-2. Test partial accumulation, stable IDs, monotonic revisions, exactly-once final, out-of-order events, stop flush, cancel, disposal, timeouts and safe error redaction.
-3. Prove the normal `test` command makes no network connection.
-4. Test server-side session/day/month counters with a fake clock.
+Implementation status: **offline skeleton added; still under evaluation**.
+
+1. The provider is implemented behind a Fake Transport only; no live transport, endpoint, credential, or external audio transmission exists.
+2. Automated tests cover partial updates, stable IDs, monotonic revisions, exactly-once final, out-of-order events, stop flush, cancel, disposal, timeouts and safe error redaction.
+3. The normal runtime has no network transport factory and fails safely before connecting.
+4. Session/day/month/concurrent counters use integer PCM frames and a fake clock. They are process-memory safeguards and reset on server restart.
 
 ### Phase 1: connection-only validation
 

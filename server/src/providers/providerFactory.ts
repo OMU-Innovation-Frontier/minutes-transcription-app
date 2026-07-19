@@ -1,6 +1,9 @@
 import { resolve } from 'node:path';
 import type { ServerProviderRequest } from '../../../shared/protocol.js';
 import type { ServerConfig } from '../config.js';
+import { FunAsrProvider } from './funAsr/funAsrProvider.js';
+import type { FunAsrTransportFactory } from './funAsr/funAsrTransport.js';
+import { FunAsrUsageGuard } from './funAsr/funAsrUsageGuard.js';
 import { LocalWhisperRuntime } from './local/localWhisperRuntime.js';
 import { LocalWhisperServerProvider } from './local/localWhisperServerProvider.js';
 import { LocalRealtimeMetricsRecorder } from './local/localRealtimeMetrics.js';
@@ -13,7 +16,16 @@ export interface ServerProviderRuntime {
   close(): Promise<void>;
 }
 
-export function createServerSpeechToTextProviderRuntime(config: ServerConfig): ServerProviderRuntime {
+export interface ServerProviderRuntimeDependencies {
+  createFunAsrTransport?: FunAsrTransportFactory;
+  now?: () => number;
+  randomUUID?: () => string;
+}
+
+export function createServerSpeechToTextProviderRuntime(
+  config: ServerConfig,
+  dependencies: ServerProviderRuntimeDependencies = {},
+): ServerProviderRuntime {
   const localRoot = resolve(process.cwd(), 'server/data/local-stt');
   const metricsRecorder = new LocalRealtimeMetricsRecorder(config.localSttDebugMetrics, localRoot);
   const debugAudioStore = new RealtimeDebugAudioStore({
@@ -34,6 +46,7 @@ export function createServerSpeechToTextProviderRuntime(config: ServerConfig): S
     processTimeoutMs: config.localSttProcessTimeoutMs,
     debugAudioStore,
   });
+  const funAsrUsageGuard = createFunAsrUsageGuard(config, dependencies.now);
   return {
     create(requestedProvider) {
       const provider = requestedProvider === 'local-whisper' ? 'local' : config.provider;
@@ -50,6 +63,19 @@ export function createServerSpeechToTextProviderRuntime(config: ServerConfig): S
           },
         });
       }
+      if (provider === 'fun-asr') {
+        return new FunAsrProvider({
+          externalEnabled: config.externalEnabled,
+          transportFactory: dependencies.createFunAsrTransport,
+          usageGuard: funAsrUsageGuard,
+          model: config.model,
+          startTimeoutMs: config.requestTimeoutMs,
+          sendTimeoutMs: config.requestTimeoutMs,
+          finishTimeoutMs: config.requestTimeoutMs,
+          now: dependencies.now,
+          randomUUID: dependencies.randomUUID,
+        });
+      }
       return new MockServerSpeechToTextProvider();
     },
     close: async () => {
@@ -57,4 +83,24 @@ export function createServerSpeechToTextProviderRuntime(config: ServerConfig): S
       await metricsRecorder.close();
     },
   };
+}
+
+function createFunAsrUsageGuard(
+  config: ServerConfig,
+  now: (() => number) | undefined,
+): FunAsrUsageGuard | undefined {
+  if (
+    config.maxAudioSecondsPerSession === undefined
+    || config.maxAudioSecondsPerDay === undefined
+    || config.maxAudioSecondsPerMonth === undefined
+    || config.maxConcurrentExternalSessions === undefined
+  ) {
+    return undefined;
+  }
+  return new FunAsrUsageGuard({
+    maxAudioSecondsPerSession: config.maxAudioSecondsPerSession,
+    maxAudioSecondsPerDay: config.maxAudioSecondsPerDay,
+    maxAudioSecondsPerMonth: config.maxAudioSecondsPerMonth,
+    maxConcurrentSessions: config.maxConcurrentExternalSessions,
+  }, now);
 }
