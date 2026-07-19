@@ -1,14 +1,14 @@
 import {
   ServerProviderError,
-  type ServerSpeechToTextProvider,
-  type ServerTranscriptResult,
+  type SttProvider,
+  type SttTranscriptResult,
 } from './types.js';
 
-export class UnavailableExternalSpeechToTextProvider implements ServerSpeechToTextProvider {
+export class UnavailableExternalSpeechToTextProvider implements SttProvider {
   readonly id: string;
   private readonly apiKey: string | undefined;
   private readonly externalEnabled: boolean;
-  private transcriptCallback: (result: ServerTranscriptResult) => void = () => undefined;
+  private transcriptCallback: (result: SttTranscriptResult) => void = () => undefined;
 
   constructor(
     options: string | undefined | { apiKey?: string; externalEnabled: boolean },
@@ -55,9 +55,9 @@ export class UnavailableExternalSpeechToTextProvider implements ServerSpeechToTe
 
   async sendAudio(): Promise<void> {}
   async stopSession(): Promise<void> {}
-  async closeSession(): Promise<void> {}
+  async dispose(): Promise<void> {}
 
-  onTranscript(callback: (result: ServerTranscriptResult) => void): void {
+  onTranscript(callback: (result: SttTranscriptResult) => void): void {
     this.transcriptCallback = callback;
     void this.transcriptCallback;
   }

@@ -1,5 +1,5 @@
 import type { AudioFrameMetadata, LocalWhisperErrorCode, WireLanguage } from '../../../../shared/protocol.js';
-import type { ServerRecognitionStatus, ServerSpeechToTextProvider, ServerTranscriptResult } from '../types.js';
+import type { ServerRecognitionStatus, SttProvider, SttTranscriptResult } from '../types.js';
 import { ServerProviderError } from '../types.js';
 import { LocalSttError } from './localSttTypes.js';
 import { LOCAL_WHISPER_MODEL_ID, LocalWhisperRuntime, type LocalWhisperJob, type LocalWhisperRecognitionResult } from './localWhisperRuntime.js';
@@ -32,7 +32,7 @@ export interface LocalUtteranceMetrics {
   completedAt?: string;
 }
 
-export class LocalWhisperServerProvider implements ServerSpeechToTextProvider {
+export class LocalWhisperServerProvider implements SttProvider {
   readonly id = 'local-whisper';
   private sessionId = '';
   private language: WireLanguage = 'ja';
@@ -42,7 +42,7 @@ export class LocalWhisperServerProvider implements ServerSpeechToTextProvider {
   private active = false;
   private stopping = false;
   private utteranceSequence = 0;
-  private transcriptCallback: (result: ServerTranscriptResult) => void = () => undefined;
+  private transcriptCallback: (result: SttTranscriptResult) => void = () => undefined;
   private errorCallback: (error: ServerProviderError) => void = () => undefined;
   private statusCallback: (status: ServerRecognitionStatus) => void = () => undefined;
   private readonly metrics: LocalUtteranceMetrics[] = [];
@@ -123,15 +123,16 @@ export class LocalWhisperServerProvider implements ServerSpeechToTextProvider {
     this.stopping = false;
   }
 
-  async closeSession(sessionId: string): Promise<void> {
-    if (sessionId !== this.sessionId) return;
-    if (this.active && !this.stopping) this.runtime.cancelSession(sessionId);
-    this.runtime.unregisterSession(sessionId);
+  async dispose(): Promise<void> {
+    if (!this.sessionId) return;
+    if (this.active && !this.stopping) this.runtime.cancelSession(this.sessionId);
+    this.runtime.unregisterSession(this.sessionId);
     this.active = false;
     this.stopping = false;
+    this.segmenter = undefined;
   }
 
-  onTranscript(callback: (result: ServerTranscriptResult) => void): void {
+  onTranscript(callback: (result: SttTranscriptResult) => void): void {
     this.transcriptCallback = callback;
   }
 

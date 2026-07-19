@@ -69,10 +69,20 @@ server/data/local-stt/bin/<version>/Release/whisper-cli.exe
 `.env`で次を明示します。
 
 ```dotenv
+VITE_TRANSCRIPTION_PROVIDER=local-whisper
+STT_PROVIDER=local
 STT_EXTERNAL_ENABLED=false
 LOCAL_STT_ENABLED=true
 LOCAL_STT_DEBUG_AUDIO=false
 ```
+
+サーバー側の`STT_PROVIDER`を未指定にした場合も`local`が既定です。モデルなしでMockだけを使う開発環境では、`.env.example`のように`STT_PROVIDER=mock`を明示してください。未知の値は外部接続へフォールバックせず、設定エラーとして起動を中止します。
+
+### STT provider境界
+
+Node.jsサーバーの上位処理は`SttProvider`だけを扱います。セッション設定、sequence付き音声チャンク、partial/finalを含む共通結果、停止、破棄がこの境界です。Local Whisperは`LocalWhisperServerProvider`内でVADと`whisper-cli.exe`実行を行い、実在するfinalだけを共通結果へ変換します。
+
+将来クラウドSTTを追加する場合は`server/src/providers/providerFactory.ts`へ新しい`SttProvider`実装を登録します。WebSocket、`TranscriptStore`、整文、要約、IndexedDB、UIはprovider固有SDKを直接参照しません。クラウド接続、APIキー、モデル、課金パッケージは現在追加されていません。
 
 詳しいWindows手順は[SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md)、Local Whisperの構成は[LOCAL_WHISPER_REALTIME.md](docs/LOCAL_WHISPER_REALTIME.md)を参照してください。
 

@@ -7,7 +7,7 @@ import { LocalProcessManager, validateExistingFile } from './localProcessManager
 import { LocalSttError } from './localSttTypes.js';
 import type { PcmUtterance } from './pcmUtteranceSegmenter.js';
 import type { VadConfiguration } from './pcmUtteranceSegmenter.js';
-import type { RealtimeDebugAudioStore } from './realtimeDebugAudio.js';
+import type { RealtimeDebugAudioStore, RealtimeDebugCapture } from './realtimeDebugAudio.js';
 
 export const SMALL_Q5_1_SHA256 = 'ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb';
 export const WHISPER_CLI_SHA256 = '58245314fb73b30fbd0cf0542c5c172e23f02b6eb7cad7b51e792439cf5e1755';
@@ -209,64 +209,70 @@ export class LocalWhisperRuntime {
     const temporaryPath = resolve(this.temporaryRoot, `utterance-${randomUUID()}.wav`);
     assertSafeChildPath(this.temporaryRoot, temporaryPath);
     await writeFile(temporaryPath, createPcm16Wav(job.utterance.pcm), { flag: 'wx', mode: 0o600 });
-    const debugCapture = await this.options.debugAudioStore?.capture({
-      temporaryWavPath: temporaryPath,
-      sessionId: job.sessionId,
-      utteranceId: job.utteranceId,
-      language: job.language,
-      utterance: job.utterance,
-      vad: job.vadConfiguration,
-      modelSha256: SMALL_Q5_1_SHA256,
-      whisperCliSha256: WHISPER_CLI_SHA256,
-    });
     let recognition: LocalWhisperRecognitionResult | undefined;
     let failure: unknown;
+    let debugCapture: RealtimeDebugCapture | undefined;
     try {
-      const result = await runTimestampedWhisperFile({
-        processes: this.processes,
-        executablePath: this.executablePath,
-        binaryRoot: this.binaryRoot,
-        modelPath: this.modelPath,
-        audioPath: temporaryPath,
+      debugCapture = await this.options.debugAudioStore?.capture({
+        temporaryWavPath: temporaryPath,
+        sessionId: job.sessionId,
+        utteranceId: job.utteranceId,
         language: job.language,
-        threads: this.options.threads,
-        timeoutMs: this.options.processTimeoutMs,
-        signal,
+        utterance: job.utterance,
+        vad: job.vadConfiguration,
+        modelSha256: SMALL_Q5_1_SHA256,
+        whisperCliSha256: WHISPER_CLI_SHA256,
       });
-      const completedAt = Date.now();
-      recognition = {
-        transcript: result.transcript,
-        segments: result.segments,
-        audioDurationMs: job.utterance.audioDurationMs,
-        processingTimeMs: result.processingTimeMs,
-        realTimeFactor: result.processingTimeMs / job.utterance.audioDurationMs,
-        queueWaitTimeMs,
-        totalLatencyMs: completedAt - job.createdAt,
-        processExitCode: result.processExitCode,
-        processCpuAveragePercent: result.processCpuAveragePercent,
-        processCpuPeakPercent: result.processCpuPeakPercent,
-        peakWorkingSetBytes: result.peakWorkingSetBytes,
-        unparsedOutputLineCount: result.unparsedOutputLineCount,
-        completedAt,
-      };
+      try {
+        const result = await runTimestampedWhisperFile({
+          processes: this.processes,
+          executablePath: this.executablePath,
+          binaryRoot: this.binaryRoot,
+          modelPath: this.modelPath,
+          audioPath: temporaryPath,
+          language: job.language,
+          threads: this.options.threads,
+          timeoutMs: this.options.processTimeoutMs,
+          signal,
+        });
+        const completedAt = Date.now();
+        recognition = {
+          transcript: result.transcript,
+          segments: result.segments,
+          audioDurationMs: job.utterance.audioDurationMs,
+          processingTimeMs: result.processingTimeMs,
+          realTimeFactor: result.processingTimeMs / job.utterance.audioDurationMs,
+          queueWaitTimeMs,
+          totalLatencyMs: completedAt - job.createdAt,
+          processExitCode: result.processExitCode,
+          processCpuAveragePercent: result.processCpuAveragePercent,
+          processCpuPeakPercent: result.processCpuPeakPercent,
+          peakWorkingSetBytes: result.peakWorkingSetBytes,
+          unparsedOutputLineCount: result.unparsedOutputLineCount,
+          completedAt,
+        };
+      } catch (error) {
+        failure = error;
+      }
+      await this.options.debugAudioStore?.finalize(debugCapture, {
+        processingTimeMs: recognition?.processingTimeMs ?? null,
+        realTimeFactor: recognition?.realTimeFactor ?? null,
+        segmentCount: recognition?.segments.length ?? null,
+        transcript: recognition?.transcript ?? null,
+        errorCode: failure instanceof LocalSttError ? failure.code : failure ? 'local_recognition_failed' : null,
+      });
     } catch (error) {
-      failure = error;
-    }
-    await this.options.debugAudioStore?.finalize(debugCapture, {
-      processingTimeMs: recognition?.processingTimeMs ?? null,
-      realTimeFactor: recognition?.realTimeFactor ?? null,
-      segmentCount: recognition?.segments.length ?? null,
-      transcript: recognition?.transcript ?? null,
-      errorCode: failure instanceof LocalSttError ? failure.code : failure ? 'local_recognition_failed' : null,
-    });
-    try {
-      await rm(temporaryPath, { force: true });
-    } catch (error) {
-      failure ??= new LocalSttError(
-        'local_temp_cleanup_failed',
-        'Local Whisper temporary audio cleanup failed.',
-        { cause: error },
-      );
+      failure ??= error;
+    } finally {
+      try {
+        await rm(temporaryPath, { force: true });
+      } catch (error) {
+        failure ??= new LocalSttError(
+          'local_temp_cleanup_failed',
+          'Local Whisper temporary audio cleanup failed.',
+          { cause: error },
+        );
+      }
     }
     if (failure) throw failure;
     if (!recognition) throw new LocalSttError('local_recognition_failed', 'Local Whisper recognition failed.');

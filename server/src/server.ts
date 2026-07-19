@@ -3,8 +3,8 @@ import type { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import { MAX_AUDIO_CHUNK_BYTES, MAX_SESSION_ID_BYTES, type ServerMessage } from '../../shared/protocol.js';
 import { loadServerConfig, type ServerConfig } from './config.js';
-import { createServerSpeechToTextProvider, createServerSpeechToTextProviderRuntime } from './providers/providerFactory.js';
-import type { ServerSpeechToTextProvider } from './providers/types.js';
+import { createServerSpeechToTextProviderRuntime } from './providers/providerFactory.js';
+import type { SttProvider } from './providers/types.js';
 import { TranscriptionWebSocketSession } from './session.js';
 import { TranscriptionSessionRegistry } from './sessionRegistry.js';
 import { loadSummaryConfig, type SummaryConfig } from './summary/config.js';
@@ -17,7 +17,7 @@ const MAX_WEBSOCKET_PAYLOAD_BYTES = MAX_AUDIO_CHUNK_BYTES + MAX_SESSION_ID_BYTES
 
 export interface TranscriptionServerOptions {
   config?: ServerConfig;
-  providerFactory?: (config: ServerConfig, requestedProvider?: import('../../shared/protocol.js').ServerProviderRequest) => ServerSpeechToTextProvider;
+  providerFactory?: (config: ServerConfig, requestedProvider?: import('../../shared/protocol.js').ServerProviderRequest) => SttProvider;
   authorizeUpgrade?: (request: IncomingMessage) => boolean | Promise<boolean>;
   summaryConfig?: SummaryConfig;
   summaryService?: SummaryService;
@@ -36,7 +36,7 @@ export function createTranscriptionServer(options: TranscriptionServerOptions = 
   const config = options.config ?? loadServerConfig();
   const providerRuntime = options.providerFactory ? undefined : createServerSpeechToTextProviderRuntime(config);
   const providerFactory = options.providerFactory ?? ((serverConfig: ServerConfig, requestedProvider?: import('../../shared/protocol.js').ServerProviderRequest) =>
-    providerRuntime?.create(requestedProvider) ?? createServerSpeechToTextProvider(serverConfig, requestedProvider));
+    providerRuntime?.create(requestedProvider) ?? failMissingProviderRuntime(serverConfig));
   const authorizeUpgrade = options.authorizeUpgrade ?? (() => true);
   const summaryService = options.summaryService ?? createSummaryService(options.summaryConfig ?? loadSummaryConfig());
   const correctionService = options.correctionService ?? createCorrectionService(options.correctionConfig ?? loadCorrectionConfig());
@@ -181,6 +181,10 @@ export function createTranscriptionServer(options: TranscriptionServerOptions = 
       ]);
     },
   };
+}
+
+function failMissingProviderRuntime(config: ServerConfig): never {
+  throw new Error(`STT provider runtime is unavailable for ${config.provider}.`);
 }
 
 function sendJson(response: import('node:http').ServerResponse, status: number, value: unknown): void {

@@ -267,8 +267,9 @@ class RecordingProvider implements ServerSpeechToTextProvider {
   readonly closedSessions: string[] = [];
   readonly audioSequences: number[] = [];
   readonly audioMetadata: Array<AudioFrameMetadata | undefined> = [];
+  private startedSessionId = '';
   private transcriptCallback: (result: ServerTranscriptResult) => void = () => undefined;
-  async startSession(): Promise<void> {}
+  async startSession(options: { sessionId: string }): Promise<void> { this.startedSessionId = options.sessionId; }
   async sendAudio(options: {
     sessionId: string; sequence: number; audio: Uint8Array; metadata?: AudioFrameMetadata;
   }): Promise<void> {
@@ -278,7 +279,7 @@ class RecordingProvider implements ServerSpeechToTextProvider {
     this.audioMetadata.push(options.metadata);
   }
   async stopSession(): Promise<void> {}
-  async closeSession(sessionId: string): Promise<void> { this.closedSessions.push(sessionId); }
+  async dispose(): Promise<void> { this.closedSessions.push(this.startedSessionId); }
   onTranscript(callback: (result: ServerTranscriptResult) => void): void { this.transcriptCallback = callback; }
   onError(callback: (error: ServerProviderError) => void): void { void callback; }
   emitTranscript(result: ServerTranscriptResult): void { this.transcriptCallback(result); }

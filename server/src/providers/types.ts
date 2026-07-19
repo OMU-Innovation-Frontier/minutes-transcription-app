@@ -1,6 +1,6 @@
 import type { AudioFrameMetadata, TranscriptWireSegment, WireLanguage } from '../../../shared/protocol.js';
 
-export interface ServerTranscriptResult {
+export interface SttTranscriptResult {
   sessionId: string;
   segmentId: string;
   revision: number;
@@ -18,6 +18,8 @@ export interface ServerTranscriptResult {
   realTimeFactor?: number;
   segments?: TranscriptWireSegment[];
 }
+
+export type ServerTranscriptResult = SttTranscriptResult;
 
 export interface ServerRecognitionStatus {
   sessionId: string;
@@ -43,28 +45,39 @@ export class ServerProviderError extends Error {
   }
 }
 
-export interface ServerSpeechToTextProvider {
+export interface SttSessionConfig {
+  sessionId: string;
+  language: WireLanguage;
+  mimeType: string;
+  sampleRate?: number;
+  hotwords?: string[];
+}
+
+export interface SttAudioChunk {
+  sessionId: string;
+  sequence: number;
+  audio: Uint8Array;
+  metadata?: AudioFrameMetadata;
+}
+
+/**
+ * Server-side STT boundary. Implementations may emit partial results, but only
+ * results with isFinal=true are eligible for downstream persistence.
+ */
+export interface SttProvider {
   readonly id: string;
-  startSession(options: {
-    sessionId: string;
-    language: WireLanguage;
-    mimeType: string;
-    sampleRate?: number;
-    hotwords?: string[];
-  }): Promise<void>;
-  sendAudio(options: {
-    sessionId: string;
-    sequence: number;
-    audio: Uint8Array;
-    metadata?: AudioFrameMetadata;
-  }): Promise<void>;
+  startSession(config: SttSessionConfig): Promise<void>;
+  sendAudio(chunk: SttAudioChunk): Promise<void>;
   stopSession(sessionId: string): Promise<void>;
-  closeSession(sessionId: string): Promise<void>;
-  onTranscript(callback: (result: ServerTranscriptResult) => void): void;
+  dispose(): Promise<void>;
+  onTranscript(callback: (result: SttTranscriptResult) => void): void;
   onError(callback: (error: ServerProviderError) => void): void;
   onStatus?(callback: (status: ServerRecognitionStatus) => void): void;
   cancelSession?(sessionId: string): Promise<void>;
 }
+
+/** @deprecated Use SttProvider. */
+export type ServerSpeechToTextProvider = SttProvider;
 
 export interface AudioFormatAdapter {
   readonly targetMimeType: string;

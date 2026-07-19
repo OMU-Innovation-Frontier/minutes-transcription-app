@@ -1,16 +1,15 @@
 import { resolve } from 'node:path';
 import type { ServerProviderRequest } from '../../../shared/protocol.js';
 import type { ServerConfig } from '../config.js';
-import { UnavailableExternalSpeechToTextProvider } from './externalProvider.js';
 import { LocalWhisperRuntime } from './local/localWhisperRuntime.js';
 import { LocalWhisperServerProvider } from './local/localWhisperServerProvider.js';
 import { LocalRealtimeMetricsRecorder } from './local/localRealtimeMetrics.js';
 import { RealtimeDebugAudioStore } from './local/realtimeDebugAudio.js';
 import { MockServerSpeechToTextProvider } from './mockProvider.js';
-import type { ServerSpeechToTextProvider } from './types.js';
+import type { SttProvider } from './types.js';
 
 export interface ServerProviderRuntime {
-  create(requestedProvider?: ServerProviderRequest): ServerSpeechToTextProvider;
+  create(requestedProvider?: ServerProviderRequest): SttProvider;
   close(): Promise<void>;
 }
 
@@ -37,7 +36,8 @@ export function createServerSpeechToTextProviderRuntime(config: ServerConfig): S
   });
   return {
     create(requestedProvider) {
-      if (requestedProvider === 'local-whisper') {
+      const provider = requestedProvider === 'local-whisper' ? 'local' : config.provider;
+      if (provider === 'local') {
         return new LocalWhisperServerProvider(localRuntime, {
           onMetric: (metric) => metricsRecorder.record(metric),
           vad: {
@@ -50,31 +50,11 @@ export function createServerSpeechToTextProviderRuntime(config: ServerConfig): S
           },
         });
       }
-      return createConfiguredProvider(config);
+      return new MockServerSpeechToTextProvider();
     },
     close: async () => {
       await localRuntime.close();
       await metricsRecorder.close();
     },
   };
-}
-
-export function createServerSpeechToTextProvider(
-  config: ServerConfig,
-  requestedProvider?: ServerProviderRequest,
-): ServerSpeechToTextProvider {
-  if (requestedProvider === 'local-whisper') {
-    const runtime = createServerSpeechToTextProviderRuntime(config);
-    return runtime.create(requestedProvider);
-  }
-  return createConfiguredProvider(config);
-}
-
-function createConfiguredProvider(config: ServerConfig): ServerSpeechToTextProvider {
-  return config.provider !== 'mock'
-    ? new UnavailableExternalSpeechToTextProvider(
-        { apiKey: config.apiKey, externalEnabled: config.externalEnabled },
-        config.provider,
-      )
-    : new MockServerSpeechToTextProvider();
 }

@@ -1,13 +1,13 @@
 import type { AudioFrameMetadata, ClientControlMessage, ServerMessage, ServerProviderRequest, WireLanguage } from '../../shared/protocol.js';
 import { ProtocolValidationError } from '../../shared/protocol.js';
-import type { ServerSpeechToTextProvider } from './providers/types.js';
+import type { SttProvider } from './providers/types.js';
 
 interface ActiveSession {
   sessionId: string;
   language: WireLanguage;
   audioFormat: string;
   providerRequest?: ServerProviderRequest;
-  provider: ServerSpeechToTextProvider;
+  provider: SttProvider;
   lastReceivedSequence: number;
   connectionId: number | null;
   send: ((message: ServerMessage) => void) | null;
@@ -25,7 +25,7 @@ export class TranscriptionSessionRegistry {
   private readonly sessions = new Map<string, ActiveSession>();
 
   constructor(
-    private readonly providerFactory: (requestedProvider?: ServerProviderRequest) => ServerSpeechToTextProvider,
+    private readonly providerFactory: (requestedProvider?: ServerProviderRequest) => SttProvider,
     private readonly options: SessionRegistryOptions,
   ) {}
 
@@ -59,11 +59,16 @@ export class TranscriptionSessionRegistry {
       pendingMessages: [],
     };
     this.bindProvider(session);
-    await provider.startSession({
-      sessionId: message.sessionId,
-      language: message.language,
-      mimeType: message.audioFormat,
-    });
+    try {
+      await provider.startSession({
+        sessionId: message.sessionId,
+        language: message.language,
+        mimeType: message.audioFormat,
+      });
+    } catch (error) {
+      await provider.dispose();
+      throw error;
+    }
     this.sessions.set(message.sessionId, session);
     return session.lastReceivedSequence;
   }
@@ -121,7 +126,7 @@ export class TranscriptionSessionRegistry {
     await session.provider.cancelSession?.(sessionId);
     session.stopped = true;
     session.send?.({ type: 'stopped', sessionId });
-    await session.provider.closeSession(sessionId);
+    await session.provider.dispose();
     session.connectionId = null;
     session.send = null;
     this.scheduleCleanup(session);
@@ -133,7 +138,7 @@ export class TranscriptionSessionRegistry {
     await session.provider.stopSession(sessionId);
     session.stopped = true;
     session.send?.({ type: 'stopped', sessionId });
-    await session.provider.closeSession(sessionId);
+    await session.provider.dispose();
     session.connectionId = null;
     session.send = null;
     this.scheduleCleanup(session);
@@ -153,7 +158,7 @@ export class TranscriptionSessionRegistry {
     this.sessions.clear();
     await Promise.all(sessions.map(async (session) => {
       clearTimeout(session.cleanupTimer);
-      await session.provider.closeSession(session.sessionId);
+      await session.provider.dispose();
     }));
   }
 
@@ -207,7 +212,9 @@ export class TranscriptionSessionRegistry {
     session.cleanupTimer = setTimeout(() => {
       if (session.connectionId !== null) return;
       this.sessions.delete(session.sessionId);
-      void session.provider.closeSession(session.sessionId);
+      void session.provider.dispose().catch((error: unknown) => {
+        console.error('[stt] detached provider cleanup failed', error);
+      });
     }, this.options.resumeTtlMs);
   }
 }

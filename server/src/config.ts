@@ -1,3 +1,12 @@
+export type SttProviderId = 'local' | 'mock';
+
+export class ServerConfigError extends Error {
+  constructor(public readonly code: 'stt_provider_unsupported', message: string) {
+    super(message);
+    this.name = 'ServerConfigError';
+  }
+}
+
 export interface ServerConfig {
   host: string;
   port: number;
@@ -7,7 +16,7 @@ export interface ServerConfig {
   connectionTimeoutMs: number;
   audioIdleTimeoutMs: number;
   sessionResumeTtlMs: number;
-  provider: string;
+  provider: SttProviderId;
   externalEnabled: boolean;
   apiKey?: string;
   region?: string;
@@ -55,7 +64,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
     connectionTimeoutMs: readInteger(env.STT_CONNECTION_TIMEOUT_MS, 15_000, 1_000, 120_000),
     audioIdleTimeoutMs: readInteger(env.STT_AUDIO_IDLE_TIMEOUT_MS, 30_000, 1_000, 600_000),
     sessionResumeTtlMs: readInteger(env.STT_SESSION_RESUME_TTL_MS, 120_000, 1_000, 3_600_000),
-    provider: env.STT_PROVIDER?.trim() || 'mock',
+    provider: readSttProvider(env.STT_PROVIDER),
     externalEnabled: readBoolean(env.STT_EXTERNAL_ENABLED, false),
     apiKey: env.STT_API_KEY || undefined,
     region: readOptionalString(env.STT_REGION),
@@ -102,6 +111,16 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
       Number.MAX_SAFE_INTEGER,
     ),
   };
+}
+
+function readSttProvider(value: string | undefined): SttProviderId {
+  const configured = value?.trim().toLowerCase();
+  if (!configured || configured === 'local' || configured === 'local-whisper') return 'local';
+  if (configured === 'mock') return 'mock';
+  throw new ServerConfigError(
+    'stt_provider_unsupported',
+    `Unsupported STT_PROVIDER value: ${configured}. Allowed values are local and mock.`,
+  );
 }
 
 function readInteger(value: string | undefined, fallback: number, minimum: number, maximum: number): number {

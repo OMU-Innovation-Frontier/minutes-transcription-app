@@ -9,13 +9,22 @@ import {
 import { prepareHotwords } from '../src/providers/hotwords';
 
 describe('external STT safety policy', () => {
-  it('keeps external API access disabled by default', () => {
+  it('defaults the common STT boundary to Local Whisper and keeps external access disabled', () => {
     const config = loadServerConfig({});
-    expect(config.provider).toBe('mock');
+    expect(config.provider).toBe('local');
     expect(config.externalEnabled).toBe(false);
     expect(config.localSttEnabled).toBe(false);
     expect(() => assertExternalSttMayStart(config)).toThrowError(
       expect.objectContaining({ code: 'external_stt_disabled' }),
+    );
+  });
+
+  it('accepts explicit local and mock providers and rejects unknown providers safely', () => {
+    expect(loadServerConfig({ STT_PROVIDER: 'local' }).provider).toBe('local');
+    expect(loadServerConfig({ STT_PROVIDER: 'local-whisper' }).provider).toBe('local');
+    expect(loadServerConfig({ STT_PROVIDER: 'mock' }).provider).toBe('mock');
+    expect(() => loadServerConfig({ STT_PROVIDER: 'unknown-cloud' })).toThrowError(
+      expect.objectContaining({ code: 'stt_provider_unsupported' }),
     );
   });
 
