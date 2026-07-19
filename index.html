@@ -50,6 +50,24 @@
         </main>
       </section>
 
+      <section id="meeting-setup-view" class="app-view meeting-setup-view" aria-labelledby="meeting-setup-title" hidden aria-hidden="true">
+        <main class="setup-main">
+          <button id="setup-cancel-button" class="back-button" type="button">← ホームへ戻る</button>
+          <p class="section-kicker">MEETING SETUP</p>
+          <h1 id="meeting-setup-title">新しい会議を準備</h1>
+          <p>録音を開始する前に、文字起こし方法とデータ処理を確認してください。</p>
+          <form id="meeting-setup-form" novalidate>
+            <fieldset><legend>会議の基本情報</legend><label class="field"><span>会議タイトル</span><input id="setup-title" required maxlength="80" aria-describedby="setup-title-error" /><span id="setup-title-error" class="inline-alert" role="alert"></span></label><label class="field"><span>言語</span><select id="setup-language"><option value="ja-JP">日本語</option><option value="en-US">English</option></select></label></fieldset>
+            <fieldset><legend>文字起こし方法</legend><label class="field"><span>方法</span><select id="setup-provider"><option value="local-whisper">Local Whisper</option><option value="browser">ブラウザー音声認識</option><option value="mock">Mock（開発者向け）</option><option value="websocket">WebSocket（開発者向け）</option></select></label><p id="setup-provider-description" class="privacy-copy"></p></fieldset>
+            <fieldset><legend>会議中に使用する機能</legend><label><input id="setup-correction" type="checkbox" /> 確定した発言を読みやすい文章に整える</label><label><input id="setup-live-summary" type="checkbox" /> 会議中に簡易要約を表示する</label><label><input id="setup-final-summary" type="checkbox" /> 会議終了後に最終要約とTODOを作る</label></fieldset>
+            <fieldset><legend>会議履歴</legend><p>このページを開いている間だけ保持します。ページ再読み込み後は復元されません。</p></fieldset>
+            <fieldset id="setup-external-confirmation" hidden><legend>外部処理の確認</legend><p>この方法では音声処理がアプリだけで完結しない可能性があります。</p><label><input id="setup-external-ack" type="checkbox" /> データの処理方法を確認しました</label></fieldset>
+            <section aria-live="polite" class="setup-summary"><h2>この会議の設定</h2><ul id="setup-summary-list"></ul></section>
+            <div class="setup-actions"><button id="setup-create-button" class="primary-action" type="submit">この設定で会議を作成</button><button id="setup-cancel-button-secondary" class="secondary-button" type="button">キャンセルしてホームへ戻る</button></div>
+          </form>
+        </main>
+      </section>
+
       <section id="meeting-view" class="app-view meeting-view" aria-labelledby="meeting-title" hidden aria-hidden="true">
         <header class="meeting-header">
           <button id="meeting-home-button" class="back-button" type="button" aria-label="ホームへ戻る">← <span>ホーム</span></button>

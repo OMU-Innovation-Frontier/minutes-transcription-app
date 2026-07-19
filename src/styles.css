@@ -416,3 +416,13 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
     transition-duration: 0.01ms !important;
   }
 }
+ .meeting-setup-view { min-height: 100vh; overflow: auto; }
+.setup-main { width: min(760px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+.setup-main h1 { margin: 8px 0 12px; }
+.setup-main fieldset { border: 1px solid var(--line, #dfe3dc); border-radius: 16px; padding: 20px; margin: 16px 0; background: var(--surface, #fff); }
+.setup-main legend { font-weight: 700; padding: 0 8px; }
+.setup-main fieldset label { display: block; margin: 12px 0; }
+.setup-summary { border-radius: 16px; padding: 20px; background: #eef3ec; }
+.setup-summary li { margin: 8px 0; }
+.setup-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+@media (max-width: 600px) { .setup-main { width: min(100% - 20px, 760px); padding-top: 20px; } .setup-main fieldset { padding: 16px; } .setup-actions > button { width: 100%; } }

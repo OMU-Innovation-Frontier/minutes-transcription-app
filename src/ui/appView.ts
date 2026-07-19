@@ -1,4 +1,4 @@
-export type AppView = 'home' | 'meeting' | 'meeting-detail';
+export type AppView = 'home' | 'meeting-setup' | 'meeting' | 'meeting-detail';
 
 export interface AppViewState {
   view: AppView;
@@ -6,10 +6,11 @@ export interface AppViewState {
   meetingEnded: boolean;
 }
 
-export type AppViewAction = 'start-meeting' | 'open-home' | 'resume-meeting' | 'end-meeting' | 'open-detail';
+export type AppViewAction = 'open-meeting-setup' | 'cancel-meeting-setup' | 'create-meeting' | 'start-meeting' | 'open-home' | 'resume-meeting' | 'end-meeting' | 'open-detail';
 
 export interface AppViewSections {
   home: HTMLElement;
+  meetingSetup?: HTMLElement;
   meeting: HTMLElement;
   meetingDetail: HTMLElement;
 }
@@ -20,6 +21,12 @@ export function createInitialAppViewState(): AppViewState {
 
 export function transitionAppView(state: AppViewState, action: AppViewAction): AppViewState {
   switch (action) {
+    case 'open-meeting-setup':
+      return { ...state, view: 'meeting-setup' };
+    case 'cancel-meeting-setup':
+      return { view: 'home', meetingStarted: false, meetingEnded: false };
+    case 'create-meeting':
+      return { view: 'meeting', meetingStarted: true, meetingEnded: false };
     case 'start-meeting':
       return { view: 'meeting', meetingStarted: true, meetingEnded: false };
     case 'open-home':
@@ -36,6 +43,7 @@ export function transitionAppView(state: AppViewState, action: AppViewAction): A
 export function applyAppView(view: AppView, sections: AppViewSections): void {
   const entries: Array<[AppView, HTMLElement]> = [
     ['home', sections.home],
+    ...(sections.meetingSetup ? [['meeting-setup', sections.meetingSetup] as [AppView, HTMLElement]] : []),
     ['meeting', sections.meeting],
     ['meeting-detail', sections.meetingDetail],
   ];
