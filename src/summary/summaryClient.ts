@@ -80,6 +80,9 @@ export class IncrementalSummaryCoordinator {
   private pending: SummarySentence[] = [];
   private timer: number | undefined;
   private inFlight: Promise<void> | null = null;
+  private initialization: Promise<void> | null = null;
+  private finalization: Promise<FinalMeetingSummary | null> | null = null;
+  private finalSummary: FinalMeetingSummary | null = null;
 
   constructor(
     private readonly client: SummaryHttpClient,
@@ -89,12 +92,16 @@ export class IncrementalSummaryCoordinator {
   ) {}
 
   async initialize(): Promise<void> {
-    try {
-      this.statusValue = await this.client.status();
-      this.callbacks.onStatus?.(this.statusValue);
-    } catch (error) {
-      this.callbacks.onError?.(toError(error));
-    }
+    if (this.initialization) return this.initialization;
+    this.initialization = (async () => {
+      try {
+        this.statusValue = await this.client.status();
+        this.callbacks.onStatus?.(this.statusValue);
+      } catch (error) {
+        this.callbacks.onError?.(toError(error));
+      }
+    })();
+    return this.initialization;
   }
 
   add(sentences: readonly CompletedSentence[]): void {
@@ -132,17 +139,27 @@ export class IncrementalSummaryCoordinator {
     return this.inFlight;
   }
 
-  async finalize(sentences: readonly CompletedSentence[]): Promise<void> {
-    this.add(sentences);
-    await this.flushLive();
-    if (!this.statusValue.enabled) return;
-    try {
-      const result = await this.client.finalize(this.meetingId, this.liveSummary, sentences.map(toSummarySentence));
-      this.callbacks.onFinalSummary?.(result);
-      this.callbacks.onUsage?.(await this.client.usage(this.meetingId));
-    } catch (error) {
-      this.callbacks.onError?.(toError(error));
-    }
+  async finalize(sentences: readonly CompletedSentence[]): Promise<FinalMeetingSummary | null> {
+    await this.initialize();
+    if (!this.statusValue.enabled) return null;
+    if (this.finalSummary) return this.finalSummary;
+    if (this.finalization) return this.finalization;
+    const finalSentences = toUniqueSummarySentences(sentences);
+    this.finalization = (async () => {
+      try {
+        const result = await this.client.finalize(this.meetingId, this.liveSummary, finalSentences);
+        this.finalSummary = result;
+        this.callbacks.onFinalSummary?.(result);
+        this.callbacks.onUsage?.(await this.client.usage(this.meetingId));
+        return result;
+      } catch (error) {
+        this.callbacks.onError?.(toError(error));
+        return null;
+      } finally {
+        this.finalization = null;
+      }
+    })();
+    return this.finalization;
   }
 
   dispose(): void {
@@ -158,8 +175,24 @@ export class IncrementalSummaryCoordinator {
   }
 }
 
-function toSummarySentence(sentence: CompletedSentence): SummarySentence {
-  return { id: sentence.id, text: sentence.displayText, startTime: sentence.startTime, endTime: sentence.endTime };
+export function toSummarySentence(sentence: CompletedSentence): SummarySentence {
+  const correction = sentence.correction;
+  const text = correction && (correction.status === 'completed' || correction.status === 'succeeded')
+    && correction.correctedText.trim()
+    ? correction.correctedText
+    : sentence.rawText;
+  return { id: sentence.id, text, startTime: sentence.startTime, endTime: sentence.endTime };
+}
+
+export function toUniqueSummarySentences(sentences: readonly CompletedSentence[]): SummarySentence[] {
+  const seen = new Set<string>();
+  const result: SummarySentence[] = [];
+  for (const sentence of sentences) {
+    if (seen.has(sentence.id)) continue;
+    seen.add(sentence.id);
+    result.push(toSummarySentence(sentence));
+  }
+  return result;
 }
 
 function toError(error: unknown): Error {

@@ -27,6 +27,24 @@ describe('summary providers and budgets', () => {
     expect((await service.usage('meeting-1')).requestCount).toBe(0);
   });
 
+  it('extracts only explicitly marked TODOs without inventing an assignee or due date', async () => {
+    const provider = new MockSummaryProvider();
+    const result = await provider.createFinalSummary({
+      meetingId: 'meeting-1',
+      liveSummary: null,
+      sentences: [
+        { id: 'sentence-1', text: 'TODO: 人工データを確認する', startTime: 0, endTime: 1 },
+        { id: 'sentence-2', text: '通常の確定済み発話', startTime: 1, endTime: 2 },
+      ],
+    });
+    expect(result.actionItems).toEqual([{
+      task: '人工データを確認する',
+      assignee: null,
+      dueDate: null,
+      evidenceSentenceIds: ['sentence-1'],
+    }]);
+  });
+
   it('rejects summary items that do not contain evidence sentence IDs', () => {
     expect(() => validateLiveMeetingSummary({
       version: 1, topic: null, keyPoints: [{ text: '根拠なし', evidenceSentenceIds: [] }],

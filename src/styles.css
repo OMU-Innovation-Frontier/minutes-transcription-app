@@ -340,6 +340,18 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .transcript-list--detail .transcript-item { font-size: clamp(1.15rem, 2.6vw, 1.55rem); }
 .persistence-note { margin-top: 5rem; padding: 1rem 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.84rem; line-height: 1.7; }
 .final-summary { line-height: 1.75; }
+.final-summary h3 { margin: 2rem 0 0.75rem; font-size: 1.05rem; }
+.final-summary__todos { display: grid; gap: 0.8rem; margin: 0; padding: 0; list-style: none; }
+.final-summary__todos > li { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 0.8rem; }
+.final-summary__todos p { margin: 0 0 0.75rem; overflow-wrap: anywhere; }
+.final-summary__todos dl,
+.final-summary__metadata { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 0.8rem; margin: 0; }
+.final-summary__todos dt,
+.final-summary__metadata dt { color: var(--muted); }
+.final-summary__todos dd,
+.final-summary__metadata dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.final-summary__metadata { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.final-summary__empty { color: var(--muted); }
 
 .settings-panel, .confirm-dialog { position: fixed; z-index: 100; inset: 0; }
 .settings-panel__backdrop, .confirm-dialog__backdrop { position: absolute; inset: 0; background: rgb(24 29 25 / 38%); backdrop-filter: blur(3px); }

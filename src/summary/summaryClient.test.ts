@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { LiveMeetingSummary, MeetingUsageSummary, SummarySentence } from '../../shared/summary';
+import type { FinalMeetingSummary, LiveMeetingSummary, MeetingUsageSummary, SummarySentence } from '../../shared/summary';
 import type { CompletedSentence } from '../transcription/types';
-import { IncrementalSummaryCoordinator, SummaryHttpClient } from './summaryClient';
+import { IncrementalSummaryCoordinator, SummaryHttpClient, toSummarySentence } from './summaryClient';
 
 function sentence(id: string): CompletedSentence {
   return {
@@ -12,6 +12,12 @@ function sentence(id: string): CompletedSentence {
 
 function live(version: number): LiveMeetingSummary {
   return { version, topic: null, keyPoints: [], decisions: [], actionItems: [], openQuestions: [] };
+}
+
+function finalSummary(): FinalMeetingSummary {
+  return {
+    version: 1, overview: 'overview', agenda: [], keyPoints: [], decisions: [], unresolvedItems: [], actionItems: [], nextChecks: [],
+  };
 }
 
 describe('SummaryHttpClient', () => {
@@ -45,6 +51,44 @@ describe('SummaryHttpClient', () => {
 });
 
 describe('IncrementalSummaryCoordinator', () => {
+  it('prefers validated correctedText and otherwise uses immutable rawText', () => {
+    const completed = sentence('one');
+    completed.correction = {
+      rawText: completed.rawText,
+      correctedText: 'corrected text',
+      status: 'completed',
+      sourceSegmentIds: [...completed.rawSegmentIds],
+      changes: [],
+      uncertainParts: [],
+    };
+    expect(toSummarySentence(completed).text).toBe('corrected text');
+    completed.correction = { ...completed.correction, status: 'pending', correctedText: 'must not be used' };
+    expect(toSummarySentence(completed).text).toBe(completed.rawText);
+  });
+
+  it('finalizes unique sentences once without creating an incremental summary request', async () => {
+    const finalize = vi.fn(async (...args: [string, LiveMeetingSummary | null, SummarySentence[]]) => {
+      void args;
+      return finalSummary();
+    });
+    const update = vi.fn();
+    const client = {
+      status: async () => ({ enabled: true, provider: 'mock' as const, apiUsed: false, intervalSeconds: 10 }),
+      update,
+      usage: async (): Promise<MeetingUsageSummary> => ({
+        inputTokens: 0, outputTokens: 0, totalTokens: 0, requestCount: 0, pricingConfigured: true,
+      }),
+      finalize,
+    } as unknown as SummaryHttpClient;
+    const coordinator = new IncrementalSummaryCoordinator(client, 'meeting-1', 2);
+    const first = sentence('one');
+    await expect(coordinator.finalize([first, first])).resolves.toEqual(finalSummary());
+    await expect(coordinator.finalize([first])).resolves.toEqual(finalSummary());
+    expect(finalize).toHaveBeenCalledOnce();
+    expect(finalize.mock.calls[0]?.[2].map((item) => item.id)).toEqual(['one']);
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('sends only newly completed sentences instead of the full meeting each time', async () => {
     let version = 0;
     const update = vi.fn(async (...args: [string, LiveMeetingSummary | null, SummarySentence[]]) => {
