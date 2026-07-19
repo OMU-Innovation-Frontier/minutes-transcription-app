@@ -27,7 +27,7 @@ See `../CLOUD_STT_PROVIDER_EVALUATION.md` for official sources, prices, privacy 
 
 If institutional account, billing and privacy approval is obtained, prototype **Alibaba Cloud Fun-ASR Realtime first**, using the Singapore international workspace and Free Quota Only. Retain **Qwen3-ASR-Flash Realtime as the second A/B candidate** on the same artificial Japanese corpus.
 
-This is not an Accepted production decision. Phase 0 may implement an offline provider skeleton with a Fake Transport, but this ADR authorizes neither a live transport nor an API call.
+This is not an Accepted production decision. Phase 0 implements an offline provider skeleton, and Phase 1a implements a live-capable transport tested only with fakes. This ADR does not authorize a live API call, account/key creation, payment setup, or audio transmission.
 
 ## Rationale
 
@@ -60,9 +60,15 @@ Qwen realtime has the same price/quota and similarly direct protocol, but curren
 
 ### Phase 0 implementation status
 
-An offline Fun-ASR skeleton now implements the provider lifecycle, strict protocol parsing, partial/final mapping, `sentence_id` ordering, duplicate suppression, and in-memory usage limits. Automated tests inject a Fake Transport. No live WebSocket transport, credential handling, endpoint, workspace, account operation, or audio upload has been added. General users cannot select it in the UI.
+The Phase 0 offline Fun-ASR skeleton implements the provider lifecycle, strict protocol parsing, partial/final mapping, `sentence_id` ordering, duplicate suppression, and in-memory usage limits. At that milestone, automated tests injected a Fake Transport and no live WebSocket transport, credential handling, endpoint, workspace, account operation, or audio upload existed. General users cannot select it in the UI.
 
 This work does not establish Japanese recognition accuracy and does not change the **Under evaluation** status. The counters reset on server restart and are not production billing enforcement.
+
+### Phase 1a implementation status
+
+A server-side WebSocket transport now supports the documented control-text/binary-audio flow, server-only handshake authentication, bounded buffering, safe errors, and bounded close cleanup. Production endpoint selection is restricted to a Singapore workspace-dedicated hostname derived from a validated server-only Workspace ID and the fixed `/api-ws/v1/inference` path; arbitrary `STT_ENDPOINT` values and mainland-China endpoints are rejected. The older `dashscope-intl.aliyuncs.com` domain remains available according to Alibaba Cloud, but this implementation does not use it or fall back to it. WebSocket construction is lazy and all automated tests inject a Fake WebSocket.
+
+No Alibaba account, Workspace ID, API key, Free Quota Only setting, payment method, live connection, or audio upload was created, configured, or used. The general UI still cannot select Fun-ASR. Japanese recognition quality, latency, billing, and retention remain unverified, so the ADR remains **Under evaluation**.
 
 - Add a Fun-ASR `SttProvider` and a separate direct-WebSocket transport/parser.
 - Add allow-listed provider/model/region configuration and factory selection.

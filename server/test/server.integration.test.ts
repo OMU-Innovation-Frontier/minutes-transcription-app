@@ -38,12 +38,19 @@ async function startServer(): Promise<{ server: RunningTranscriptionServer; addr
 
 describe('transcription server integration', () => {
   it('serves the health endpoint without API keys', async () => {
-    const { address } = await startServer();
+    const apiKey = 'test-key-not-real';
+    const workspaceId = 'workspace-test';
+    const server = createTranscriptionServer({ config: { ...testConfig(), apiKey, workspaceId } });
+    runningServers.push(server);
+    const address = await server.start();
     const response = await fetch(`http://127.0.0.1:${address.port}/health`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
+    const body = await response.json();
+    expect(body).toEqual({
       status: 'ok', provider: 'mock', localSttEnabled: false,
     });
+    expect(JSON.stringify(body)).not.toContain(apiKey);
+    expect(JSON.stringify(body)).not.toContain(workspaceId);
   });
 
   it('accepts WebSocket audio and returns ready, transcript, and stopped', async () => {
