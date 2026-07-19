@@ -6,7 +6,7 @@ import { IncrementalSummaryCoordinator, SummaryHttpClient } from './summaryClien
 function sentence(id: string): CompletedSentence {
   return {
     id, sessionId: 'meeting-1', rawSegmentIds: [`raw-${id}`], rawText: id, displayText: `${id}。`,
-    language: 'ja', startTime: 0, endTime: 1, completionReason: 'punctuation',
+    language: 'ja', revision: 0, startTime: 0, endTime: 1, completionReason: 'punctuation',
   };
 }
 

@@ -1,6 +1,33 @@
 export const CORRECTION_POLICY_VERSION = 'safe-correction-v1';
+export const CORRECTION_QUEUE_LIMIT = 100;
+export const CORRECTION_MAX_ATTEMPTS = 3;
 
-export type CorrectionStatus = 'disabled' | 'pending' | 'completed' | 'failed' | 'skipped';
+export type CorrectionStatus =
+  | 'disabled'
+  | 'queued'
+  | 'processing'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'skipped'
+  | 'fallback'
+  // Legacy values remain readable so IndexedDB version 1 records can be migrated safely.
+  | 'pending'
+  | 'completed';
+export type CorrectionFailureReason =
+  | 'timeout'
+  | 'provider_unavailable'
+  | 'invalid_response'
+  | 'input_too_long'
+  | 'output_validation_failed'
+  | 'protected_token_mismatch'
+  | 'queue_full'
+  | 'cancelled'
+  | 'stale_result'
+  | 'interrupted'
+  | 'storage_failed'
+  | 'max_attempts_reached'
+  | 'unknown_safe_failure';
 export type CorrectionChangeReason = 'asr_error' | 'punctuation' | 'grammar' | 'spelling' | 'duplicate' | 'glossary';
 export type CorrectionUncertainReason = 'number' | 'proper_noun' | 'technical_term' | 'low_context' | 'ambiguous';
 export type CorrectionLanguage = 'ja' | 'en';
@@ -23,9 +50,17 @@ export interface TranscriptCorrection {
   changes: CorrectionChange[];
   uncertainParts: CorrectionUncertainPart[];
   provider?: string;
+  model?: string;
   processingTimeMs?: number;
   sourceSegmentIds: string[];
   errorCode?: string;
+  requestId?: string;
+  segmentId?: string;
+  revision?: number;
+  attemptCount?: number;
+  policyVersion?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface GlossaryEntry {
@@ -52,7 +87,12 @@ export interface CorrectionInput {
 }
 
 export interface CorrectionRequest {
+  requestId: string;
+  meetingId: string;
   sessionId: string;
+  segmentId: string;
+  revision: number;
+  attemptCount: number;
   input: CorrectionInput;
 }
 
@@ -65,12 +105,15 @@ export interface CorrectionProviderOutput {
 export interface CorrectionServiceStatus {
   enabled: boolean;
   provider: string;
+  model: string;
   externalTransmission: boolean;
   timeoutMs: number;
   concurrency: number;
   maxInputChars: number;
   removeFillers: boolean;
   correctionPolicyVersion: string;
+  queueLimit: number;
+  maxAttempts: number;
 }
 
 export interface CorrectionValidationOptions {
@@ -98,7 +141,19 @@ export function createFallbackCorrection(
   rawText: string,
   status: Exclude<CorrectionStatus, 'completed'>,
   sourceSegmentIds: readonly string[],
-  details: { provider?: string; processingTimeMs?: number; errorCode?: string } = {},
+  details: {
+    provider?: string;
+    model?: string;
+    processingTimeMs?: number;
+    errorCode?: string;
+    requestId?: string;
+    segmentId?: string;
+    revision?: number;
+    attemptCount?: number;
+    policyVersion?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  } = {},
 ): TranscriptCorrection {
   return {
     rawText,
@@ -107,14 +162,44 @@ export function createFallbackCorrection(
     changes: [],
     uncertainParts: [],
     provider: details.provider,
+    model: details.model,
     processingTimeMs: details.processingTimeMs,
     sourceSegmentIds: [...sourceSegmentIds],
     errorCode: details.errorCode,
+    requestId: details.requestId,
+    segmentId: details.segmentId,
+    revision: details.revision,
+    attemptCount: details.attemptCount,
+    policyVersion: details.policyVersion,
+    createdAt: details.createdAt,
+    updatedAt: details.updatedAt,
   };
 }
 
 export function parseCorrectionRequest(value: unknown, maxInputChars: number): CorrectionRequest {
-  if (!isRecord(value) || typeof value.sessionId !== 'string' || !value.sessionId.trim() || !isRecord(value.input)) {
+  // Accept the pre-pipeline request shape for local compatibility, while
+  // normalizing it to the strict internal request metadata.
+  if (isRecord(value) && isRecord(value.input)) {
+    const input = value.input;
+    if (typeof value.sessionId === 'string' && !('requestId' in value)) value.requestId = `legacy-${value.sessionId}`;
+    if (typeof value.sessionId === 'string' && !('meetingId' in value)) value.meetingId = value.sessionId;
+    if (!('segmentId' in value) && typeof input.targetSegmentId === 'string') value.segmentId = input.targetSegmentId;
+    if (!('revision' in value)) value.revision = 0;
+    if (!('attemptCount' in value)) value.attemptCount = 1;
+  }
+  if (
+    !isRecord(value)
+    || !isSafeIdentifier(value.requestId)
+    || !isSafeIdentifier(value.meetingId)
+    || !isSafeIdentifier(value.sessionId)
+    || !isSafeIdentifier(value.segmentId)
+    || !Number.isSafeInteger(value.revision)
+    || (value.revision as number) < 0
+    || !Number.isSafeInteger(value.attemptCount)
+    || (value.attemptCount as number) < 1
+    || (value.attemptCount as number) > CORRECTION_MAX_ATTEMPTS
+    || !isRecord(value.input)
+  ) {
     throw new CorrectionValidationError('invalid_request', '整文リクエストが不正です。');
   }
   const input = value.input;
@@ -129,6 +214,9 @@ export function parseCorrectionRequest(value: unknown, maxInputChars: number): C
     || !Array.isArray(input.sourceSegmentIds)
   ) {
     throw new CorrectionValidationError('invalid_request', '整文入力が不正です。');
+  }
+  if (input.targetSegmentId !== value.segmentId) {
+    throw new CorrectionValidationError('invalid_request', '整文対象のsegment IDが一致しません。');
   }
   if (input.previousSegments.length > 2) {
     throw new CorrectionValidationError('too_many_context_segments', '参考文脈は最大2件です。');
@@ -149,7 +237,12 @@ export function parseCorrectionRequest(value: unknown, maxInputChars: number): C
     + glossary.reduce((sum, entry) => sum + entry.canonical.length + (entry.aliases ?? []).join('').length, 0);
   if (characterCount > maxInputChars) throw new CorrectionValidationError('input_too_large', '整文入力が上限を超えています。');
   return {
+    requestId: value.requestId,
+    meetingId: value.meetingId,
     sessionId: value.sessionId,
+    segmentId: value.segmentId,
+    revision: value.revision as number,
+    attemptCount: value.attemptCount as number,
     input: {
       targetSegmentId: input.targetSegmentId,
       targetRawText: input.targetRawText,
@@ -193,12 +286,15 @@ export function validateCorrectionOutput(
   if (!isRecord(parsed) || typeof parsed.correctedText !== 'string' || !Array.isArray(parsed.changes) || !Array.isArray(parsed.uncertainParts)) {
     throw new CorrectionValidationError('invalid_output_shape', '整文出力の形式が不正です。');
   }
-  if (parsed.changes.length > 100 || parsed.uncertainParts.length > 100) {
+  if (parsed.changes.length > 100 || parsed.uncertainParts.length > 20) {
     throw new CorrectionValidationError('output_too_large', '整文出力の配列が大きすぎます。');
   }
   const changes = parsed.changes.map(parseChange);
   const uncertainParts = parsed.uncertainParts.map(parseUncertainPart);
   const rawText = input.targetRawText;
+  if (!parsed.correctedText.trim() || containsUnsafeControl(parsed.correctedText)) {
+    throw new CorrectionValidationError('invalid_corrected_text', '整文結果の文字列が不正です。');
+  }
   const maximumLength = Math.max(rawText.length + 20, Math.ceil(rawText.length * (options.maxOutputRatio ?? 1.6)));
   if (parsed.correctedText.length > maximumLength) {
     throw new CorrectionValidationError('output_too_long', '整文結果が原文に対して長すぎます。');
@@ -274,6 +370,9 @@ function parseChange(value: unknown): CorrectionChange {
 function parseUncertainPart(value: unknown): CorrectionUncertainPart {
   if (!isRecord(value) || typeof value.text !== 'string' || !value.text || !UNCERTAIN_REASONS.has(value.reason as CorrectionUncertainReason)) {
     throw new CorrectionValidationError('invalid_uncertain_part', 'uncertainPartsの項目が不正です。');
+  }
+  if (value.text.length > 200 || containsUnsafeControl(value.text)) {
+    throw new CorrectionValidationError('invalid_uncertain_part', 'uncertainPartsの文字列が不正です。');
   }
   return { text: value.text, reason: value.reason as CorrectionUncertainReason };
 }
@@ -379,6 +478,22 @@ function levenshtein(left: string, right: string): number {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function isSafeIdentifier(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 200
+    && value.trim() === value
+    && !containsUnsafeControl(value);
+}
+
+function containsUnsafeControl(value: string): boolean {
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code <= 8 || code === 11 || code === 12 || (code >= 14 && code <= 31) || code === 127) return true;
+  }
+  return false;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

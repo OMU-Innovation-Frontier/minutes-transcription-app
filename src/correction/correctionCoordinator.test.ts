@@ -7,12 +7,15 @@ import { CorrectionCoordinator, MemoryCorrectionStorage, type CorrectionHttpClie
 const enabledStatus: CorrectionServiceStatus = {
   enabled: true,
   provider: 'mock',
+  model: 'deterministic-mock-v1',
   externalTransmission: false,
   timeoutMs: 100,
   concurrency: 1,
   maxInputChars: 4_000,
   removeFillers: false,
   correctionPolicyVersion: 'safe-correction-v1',
+  queueLimit: 100,
+  maxAttempts: 3,
 };
 
 function makeStore(texts: string[]): TranscriptStore {
@@ -54,7 +57,7 @@ describe('CorrectionCoordinator', () => {
     const store = makeStore(['確認します']);
     let resolve!: (value: TranscriptCorrection) => void;
     const pending = new Promise<TranscriptCorrection>((done) => { resolve = done; });
-    const coordinator = new CorrectionCoordinator(client(async () => pending), store, 'session-1');
+    const coordinator = new CorrectionCoordinator(client(async () => pending), store, 'session-1', {}, { storage: new MemoryCorrectionStorage() });
     coordinator.add(store.snapshot().completedSentences);
     await coordinator.initialize();
     expect(store.snapshot().completedSentences[0]?.correction).toMatchObject({ status: 'pending', rawText: '確認します' });
@@ -65,7 +68,7 @@ describe('CorrectionCoordinator', () => {
   it('does not process the same sentence twice', async () => {
     const store = makeStore(['一文目']);
     const correct = vi.fn(async (input: CorrectionInput) => completed(input));
-    const coordinator = new CorrectionCoordinator(client(correct), store, 'session-1');
+    const coordinator = new CorrectionCoordinator(client(correct), store, 'session-1', {}, { storage: new MemoryCorrectionStorage() });
     coordinator.add(store.snapshot().completedSentences);
     coordinator.add(store.snapshot().completedSentences);
     await coordinator.initialize();
@@ -80,7 +83,7 @@ describe('CorrectionCoordinator', () => {
     const coordinator = new CorrectionCoordinator(client(async (input) => {
       inputs.push(input);
       return completed(input);
-    }), store, 'session-1');
+    }), store, 'session-1', {}, { storage: new MemoryCorrectionStorage() });
     coordinator.add(store.snapshot().completedSentences);
     await coordinator.initialize();
     await vi.waitFor(() => expect(inputs).toHaveLength(3));
@@ -93,7 +96,7 @@ describe('CorrectionCoordinator', () => {
     const resolvers = new Map<string, (value: TranscriptCorrection) => void>();
     const coordinator = new CorrectionCoordinator(client((input) => new Promise((resolve) => {
       resolvers.set(input.targetSegmentId, resolve);
-    }), { ...enabledStatus, concurrency: 2 }), store, 'session-1');
+    }), { ...enabledStatus, concurrency: 2 }), store, 'session-1', {}, { storage: new MemoryCorrectionStorage() });
     coordinator.add(store.snapshot().completedSentences);
     await coordinator.initialize();
     await vi.waitFor(() => expect(resolvers.size).toBe(2));
@@ -107,7 +110,7 @@ describe('CorrectionCoordinator', () => {
   it('discards a response after cancellation', async () => {
     const store = makeStore(['キャンセル対象']);
     let resolve!: (value: TranscriptCorrection) => void;
-    const coordinator = new CorrectionCoordinator(client(async () => new Promise((done) => { resolve = done; })), store, 'session-1');
+    const coordinator = new CorrectionCoordinator(client(async () => new Promise((done) => { resolve = done; })), store, 'session-1', {}, { storage: new MemoryCorrectionStorage() });
     coordinator.add(store.snapshot().completedSentences);
     await coordinator.initialize();
     const sentence = store.snapshot().completedSentences[0]!;
@@ -129,7 +132,7 @@ describe('CorrectionCoordinator', () => {
         reject(error);
       }, { once: true }));
       return completed(input);
-    }, { ...enabledStatus, timeoutMs: 5 }), store, 'session-1');
+    }, { ...enabledStatus, timeoutMs: 5 }), store, 'session-1', {}, { storage: new MemoryCorrectionStorage() });
     coordinator.add(store.snapshot().completedSentences);
     await coordinator.initialize();
     await vi.waitFor(() => expect(store.snapshot().completedSentences[1]?.correction?.status).toBe('completed'));
@@ -153,7 +156,7 @@ describe('CorrectionCoordinator', () => {
   it('does not call correction when the feature is disabled', async () => {
     const store = makeStore(['無効時']);
     const correct = vi.fn(async (input: CorrectionInput) => completed(input));
-    const coordinator = new CorrectionCoordinator(client(correct, { ...enabledStatus, enabled: false }), store, 'session-1');
+    const coordinator = new CorrectionCoordinator(client(correct, { ...enabledStatus, enabled: false }), store, 'session-1', {}, { storage: new MemoryCorrectionStorage() });
     coordinator.add(store.snapshot().completedSentences);
     await coordinator.initialize();
     expect(correct).not.toHaveBeenCalled();
