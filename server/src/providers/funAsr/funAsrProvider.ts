@@ -165,8 +165,8 @@ export class FunAsrProvider implements SttProvider {
           this.sendTimeoutMs,
           'fun_asr_transport_closed',
         );
-      } catch {
-        const error = providerError('fun_asr_transport_closed');
+      } catch (cause) {
+        const error = normalizeSendError(cause);
         this.fail(error);
         throw error;
       }
@@ -222,7 +222,7 @@ export class FunAsrProvider implements SttProvider {
   private attachTransport(transport: FunAsrTransport): void {
     this.unsubscribe = [
       transport.onMessage((message) => this.handleMessage(message)),
-      transport.onError(() => this.fail(providerError('fun_asr_transport_closed'))),
+      transport.onError((error) => this.fail(normalizeProviderError(error, 'fun_asr_transport_closed'))),
       transport.onClose(() => {
         if (!['stopping', 'stopped', 'cancelled', 'disposed'].includes(this.lifecycle)) {
           this.fail(providerError('fun_asr_transport_closed'));
@@ -520,6 +520,11 @@ function createDeferred(): Deferred {
 
 function normalizeProviderError(error: unknown, fallbackCode: string): ServerProviderError {
   return error instanceof ServerProviderError ? error : providerError(fallbackCode);
+}
+
+function normalizeSendError(error: unknown): ServerProviderError {
+  if (error instanceof ServerProviderError && error.code.startsWith('fun_asr_transport_')) return error;
+  return providerError('fun_asr_transport_closed');
 }
 
 function providerError(code: string): ServerProviderError {

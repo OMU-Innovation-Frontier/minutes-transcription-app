@@ -26,11 +26,17 @@ Browser microphone
 
 ## STT
 
-### Fun-ASR Phase 0 boundary
+### Fun-ASR Phase 1a boundary
 
 `server/src/providers/funAsr/` separates provider lifecycle, protocol runtime validation, the transport interface, and an in-memory usage guard. The provider accepts the existing 16 kHz mono PCM16 frames directly. `result-generated` partials update one stable segment and only ordered, non-empty finals cross the existing persistence/correction boundary. Per-session transcript bookkeeping is bounded, including a 256-entry final reorder buffer. At `task-finished`, a missing `sentence_id` produces a safe gap error and remaining buffered finals are emitted in numeric order before cleanup.
 
-Only tests supply a Fake Transport. Production runtime has no Alibaba endpoint, WebSocket implementation, credentials, or workspace configuration and therefore fails before networking. Usage is reserved as integer PCM frames before transport delivery; session/day/month/concurrent limits are process memory only and reset when the server restarts.
+Phase 1a adds `FunAsrWebSocketTransport`, isolated from transcript state and protocol parsing. The production factory derives the currently recommended Singapore workspace-dedicated URL, `wss://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/inference`, from a validated server-only `STT_WORKSPACE_ID`. `STT_ENDPOINT` is never accepted as a Fun-ASR override. The older `dashscope-intl.aliyuncs.com` domain remains available according to Alibaba Cloud, but this implementation neither selects it nor falls back to it. The transport sends control JSON as text and copied PCM as binary, enforces payload/backpressure bounds, does not follow redirects or reconnect, and closes with bounded cleanup. The API key remains in server configuration and the handshake header only; it is absent from URLs, browser messages, health, control JSON, logs, and safe errors. The Workspace ID is likewise absent from browser messages, health, logs, and safe errors.
+
+Ordinary tests inject a Fake WebSocket constructor, so they perform no DNS, HTTP, TLS, or external WebSocket activity. Runtime construction creates no socket. A socket is created only from `startSession`, and only when external STT, the server credential, validated Workspace ID, `singapore`, `fun-asr-realtime`, and every usage limit are explicitly configured. Usage is reserved as integer PCM frames before transport delivery; session/day/month/concurrent limits are process memory only and reset when the server restarts.
+
+No live Alibaba connection has been attempted. Account ownership, Free Quota Only, participant notice/consent, retention terms, Japanese quality, latency, and measured billing remain prerequisites for a separately approved validation.
+
+Phase 1a protocol sources were rechecked on 2026-07-19: Alibaba Cloud's [Fun-ASR WebSocket API](https://www.alibabacloud.com/help/en/model-studio/fun-asr-realtime-websocket-api), [client events](https://www.alibabacloud.com/help/en/model-studio/fun-asr-client-events), [server events](https://www.alibabacloud.com/help/en/model-studio/fun-asr-server-events), [region/access-domain guide](https://www.alibabacloud.com/help/en/model-studio/regions), [Workspace ID guide](https://www.alibabacloud.com/help/en/model-studio/obtain-the-app-id-and-workspace-id), [API-key guide](https://www.alibabacloud.com/help/en/model-studio/get-api-key), and [speech-to-text model guide](https://www.alibabacloud.com/help/en/model-studio/asr-model).
 
 サーバー上位層は`server/src/providers/types.ts`の`SttProvider`だけを扱います。共通境界は`SttSessionConfig`、`SttAudioChunk`、`SttTranscriptResult`、セッション停止、`dispose`を持ちます。生成は`server/src/providers/providerFactory.ts`へ集約しています。`STT_PROVIDER`未指定時は`local`、モデルなしのMock開発時だけ`mock`を明示します。未知の値は安全な設定エラーです。
 

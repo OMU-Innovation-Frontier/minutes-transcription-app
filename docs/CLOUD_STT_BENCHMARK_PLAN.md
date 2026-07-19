@@ -83,14 +83,24 @@ Normalization must be defined before scoring. Keep two views: strict verbatim an
 
 Implementation status: **offline skeleton added; still under evaluation**.
 
-1. The provider is implemented behind a Fake Transport only; no live transport, endpoint, credential, or external audio transmission exists.
+1. At the Phase 0 milestone, the provider was implemented behind a Fake Transport only; no live transport, endpoint, credential, or external audio transmission existed.
 2. Automated tests cover partial updates, stable IDs, monotonic revisions, exactly-once final, out-of-order events, stop flush, cancel, disposal, timeouts and safe error redaction.
-3. The normal runtime has no network transport factory and fails safely before connecting.
+3. At the Phase 0 milestone, the normal runtime had no network transport factory and failed safely before connecting.
 4. Session/day/month/concurrent counters use integer PCM frames and a fake clock. They are process-memory safeguards and reset on server restart.
+
+### Phase 1a: live-capable transport, offline validation only
+
+Implementation status: **transport code added; no live connection has been run**.
+
+1. The server transport uses the existing `ws` dependency and accepts only the Singapore workspace-dedicated hostname derived from a validated server-only Workspace ID plus the fixed `/api-ws/v1/inference` path. It does not use or fall back to the older `dashscope-intl.aliyuncs.com` domain.
+2. Authentication is server-side only; credentials are absent from URLs, control messages, health, logs, safe errors, browser code, and fixtures.
+3. Connection, control text, binary PCM, inbound JSON, backpressure, close races, and cleanup are tested with a Fake WebSocket constructor. Ordinary tests create no network socket.
+4. The runtime remains disabled by default and requires explicit provider/external flags, credential, region, model, and session/day/month/concurrency limits.
+5. No account, key, Workspace ID, Free Quota Only setting, payment configuration, API request, or audio upload was created, configured, or performed in Phase 1a.
 
 ### Phase 1: connection-only validation
 
-1. Human verifies Free Quota Only and remaining quota.
+1. Human resolves the institutional account/workspace owner and verifies Free Quota Only and remaining quota.
 2. Explicitly set one approved provider/model/region.
 3. Connect without sending audio; validate session setup and close.
 4. Record no key, headers, raw response or transcript in logs.

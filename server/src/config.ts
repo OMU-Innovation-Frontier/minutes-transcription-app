@@ -19,6 +19,7 @@ export interface ServerConfig {
   provider: SttProviderId;
   externalEnabled: boolean;
   apiKey?: string;
+  workspaceId?: string;
   region?: string;
   model?: string;
   endpoint?: string;
@@ -70,6 +71,7 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
     provider: readSttProvider(env.STT_PROVIDER),
     externalEnabled: readBoolean(env.STT_EXTERNAL_ENABLED, false),
     apiKey: env.STT_API_KEY || undefined,
+    workspaceId: readOptionalString(env.STT_WORKSPACE_ID),
     region: readOptionalString(env.STT_REGION),
     model: readOptionalString(env.STT_MODEL),
     endpoint: readOptionalString(env.STT_ENDPOINT),

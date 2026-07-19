@@ -43,10 +43,11 @@
 - 法令・団体規則への完全準拠を保証するものではない。
 - 外部API、有料サービス、一般公開は事前合意と追加実装が必要。
 
-## Fun-ASR Phase 0 limitations
+## Fun-ASR Phase 1a limitations
 
-- The Fun-ASR code is an offline protocol/provider skeleton tested only with a Fake Transport. No live WebSocket transport or API connection exists.
-- No API key, workspace, account, Free Quota Only setting, or payment configuration is used. The provider is not exposed in the user interface.
+- The Fun-ASR code now includes a server-side WebSocket transport, but it is validated only with Fake Transport/Fake WebSocket tests. No live API connection or external audio transmission has occurred.
+- The transport permits only a Singapore workspace-dedicated endpoint derived from a validated server-only Workspace ID and a fixed path. It does not use or fall back to the older `dashscope-intl.aliyuncs.com` domain, and it does not reconnect or replay audio automatically. Live behavior is still unverified.
+- No API key, Workspace ID, account, Free Quota Only setting, or payment configuration has been created, configured, or used. The provider is not exposed in the user interface.
 - Japanese recognition accuracy, latency, billing behavior, retention, and deletion remain unverified.
 - Audio usage limits are in-memory integer counters. They do not survive a server restart and are not sufficient for production billing control.
-- Before any live phase, institutional ownership, Free Quota Only, consent UI, retention terms, and persistent usage enforcement require human approval. Local Whisper remains the fallback.
+- Before any live validation, institutional ownership, Free Quota Only, consent UI, retention terms, workspace/access-domain choice, and persistent usage enforcement require human approval. Local Whisper remains the fallback; Qwen3-ASR remains an unimplemented comparison candidate.

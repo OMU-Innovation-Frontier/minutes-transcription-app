@@ -1,10 +1,10 @@
 # Minutes Transcription App
 
-## Fun-ASR Phase 0 (offline only)
+## Fun-ASR Phase 1a (live-capable transport, not live-validated)
 
-The server contains an offline-only Fun-ASR provider skeleton behind the existing `SttProvider` boundary. It validates protocol events, maps partial/final results, preserves `sentence_id` order, and applies in-memory audio usage limits. Tests inject a Fake Transport.
+The server contains a Fun-ASR provider behind the existing `SttProvider` boundary. Phase 0 validates protocol events, maps partial/final results, preserves `sentence_id` order, and applies in-memory audio usage limits. Phase 1a adds a server-only `ws` transport with a Singapore workspace-dedicated hostname derived from a validated server-only Workspace ID, a fixed path, bounded frames/backpressure, safe close behavior, and server-side handshake authentication. The existing `dashscope-intl.aliyuncs.com` domain remains documented by Alibaba Cloud, but this implementation does not use it or fall back to it. Tests inject Fake Transport and Fake WebSocket implementations and remain fully offline.
 
-There is no live Alibaba WebSocket transport, credential handling, endpoint, account setup, or external audio transmission. Selecting `STT_PROVIDER=fun-asr` in a normal runtime fails safely with `fun_asr_live_transport_unavailable`. It is not available to general users and is not a production adoption decision. Local Whisper and Mock remain unchanged.
+No Alibaba account, API key, Workspace ID, Free Quota Only setting, payment method, live connection, or external audio transmission has been used. External STT remains disabled by default. A live connection is possible only after all server-only settings, including `STT_WORKSPACE_ID`, and usage limits are explicitly configured; arbitrary endpoints are rejected. Fun-ASR is not exposed to general users, has not been benchmarked, and is not a production adoption decision. Local Whisper and Mock remain unchanged.
 
 ブラウザーマイクの音声をリアルタイムに文字起こしし、会議中の発話を読みやすく確認するための議事録アプリです。Vite + TypeScriptのフロントエンドと、Node.js + TypeScript + WebSocketのバックエンドで構成されています。
 
