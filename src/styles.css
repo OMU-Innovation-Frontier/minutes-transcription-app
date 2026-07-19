@@ -271,6 +271,9 @@ button { color: inherit; }
 .utterance__detail-row p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .utterance__uncertain { padding: 0.85rem 1rem; border-left: 3px solid #b88a35; background: #faf4e8; }
 .utterance__uncertain ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+.utterance__action { justify-self: start; }
+.utterance__state--queued, .utterance__state--processing { color: #5f4b18; background: #fff3c4; }
+.utterance__state--cancelled, .utterance__state--fallback { color: #6c4b27; background: #f7e9d8; }
 .interim-transcript { margin-top: 3rem; color: #6d736c; font-size: clamp(1.2rem, 2.8vw, 1.7rem); line-height: 1.55; }
 .interim-transcript span { display: block; margin-bottom: 0.5rem; color: var(--soft); font-size: 0.72rem; font-weight: 750; }
 .interim-transcript p { margin: 0; }

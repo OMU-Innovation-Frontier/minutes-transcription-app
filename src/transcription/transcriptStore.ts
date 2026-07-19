@@ -133,7 +133,19 @@ export class TranscriptStore {
     const sentence = this.completedSentences[index];
     if (!sentence || correction.rawText !== sentence.rawText) return false;
     if (!sameIds(correction.sourceSegmentIds, sentence.rawSegmentIds)) return false;
-    if (sentence.correction?.status === 'completed') return false;
+    if (correction.segmentId !== undefined && correction.segmentId !== sentence.id) return false;
+    if (correction.revision !== undefined && correction.revision !== sentence.revision) return false;
+    const current = sentence.correction;
+    if (current?.status === 'completed' || current?.status === 'succeeded') return false;
+    if (current) {
+      const currentAttempt = current.attemptCount ?? 0;
+      const incomingAttempt = correction.attemptCount ?? currentAttempt;
+      if (incomingAttempt < currentAttempt) return false;
+      if (incomingAttempt === currentAttempt) {
+        if (current.requestId && correction.requestId && current.requestId !== correction.requestId) return false;
+        if (statusRank(correction.status) <= statusRank(current.status)) return false;
+      }
+    }
     if (sentence.correction && JSON.stringify(sentence.correction) === JSON.stringify(correction)) return false;
     this.completedSentences = this.completedSentences.map((item, itemIndex) => itemIndex === index
       ? { ...item, correction: cloneCorrection(correction) }
@@ -176,6 +188,22 @@ export class TranscriptStore {
     this.interim = null;
     return true;
   }
+}
+
+function statusRank(status: TranscriptCorrection['status']): number {
+  const ranks: Record<TranscriptCorrection['status'], number> = {
+    disabled: 4,
+    queued: 1,
+    pending: 2,
+    processing: 2,
+    succeeded: 4,
+    completed: 4,
+    failed: 4,
+    cancelled: 4,
+    skipped: 4,
+    fallback: 4,
+  };
+  return ranks[status];
 }
 
 function sameIds(left: readonly string[], right: readonly string[]): boolean {

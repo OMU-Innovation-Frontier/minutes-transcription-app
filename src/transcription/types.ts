@@ -78,6 +78,7 @@ export interface CompletedSentence {
   sessionId: string;
   rawSegmentIds: string[];
   rawText: string;
+  revision: number;
   displayText: string;
   language: TranscriptLanguage;
   startTime: number;

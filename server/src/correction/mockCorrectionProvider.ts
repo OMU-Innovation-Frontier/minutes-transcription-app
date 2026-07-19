@@ -23,6 +23,7 @@ export interface MockCorrectionProviderOptions {
 
 export class MockCorrectionProvider implements CorrectionProvider {
   readonly name = 'mock';
+  readonly model = 'deterministic-mock-v1';
   readonly externalTransmission = false;
 
   constructor(private readonly options: MockCorrectionProviderOptions = {}) {}
@@ -41,6 +42,8 @@ export class MockCorrectionProvider implements CorrectionProvider {
     }
     return JSON.stringify(createDeterministicOutput(input));
   }
+
+  async dispose(): Promise<void> {}
 }
 
 function createDeterministicOutput(input: CorrectionInput): CorrectionProviderOutput {

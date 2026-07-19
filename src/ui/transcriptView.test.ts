@@ -11,6 +11,7 @@ function sentence(id: string, rawText: string, correction?: CompletedSentence['c
     rawText,
     displayText: rawText,
     language: 'ja',
+    revision: 0,
     startTime: 0,
     endTime: 1,
     completionReason: 'silence',

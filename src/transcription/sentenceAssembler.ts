@@ -128,6 +128,7 @@ export class SentenceAssembler {
       sessionId: segments[0]?.sessionId ?? '',
       rawSegmentIds: segments.map((segment) => segment.id),
       rawText,
+      revision: Math.max(...segments.map((segment) => segment.revision)),
       displayText: toDisplayText(displayText, language),
       language,
       startTime: segments[0]?.startTime ?? this.now(),

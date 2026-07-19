@@ -373,7 +373,7 @@ function createCorrectionCoordinator(sessionId: string): CorrectionCoordinator {
   return new CorrectionCoordinator(correctionClient, transcriptStore, sessionId, {
     onStatus: renderCorrectionStatus,
     onError: (error) => renderCorrectionWarning(error.message),
-  });
+  }, { meetingId: currentMeetingId || sessionId });
 }
 
 function handleTranscriptChange(): void {
@@ -471,10 +471,15 @@ function renderTranscript(): void {
 
   const mainItems = showRaw
     ? snapshot.rawSegments.map((segment, index) => createRawSegmentElement(segment, index, snapshot.rawSegments.length))
-    : snapshot.completedSentences.map((sentence, index) => createSentenceElement(sentence, index, nextCount, { enteringSentenceId }));
+    : snapshot.completedSentences.map((sentence, index) => createSentenceElement(sentence, index, nextCount, {
+      enteringSentenceId,
+      onRetryCorrection: retryCorrection,
+    }));
   elements.finalTranscript.replaceChildren(...mainItems);
 
-  const detailItems = snapshot.completedSentences.map((sentence, index) => createSentenceElement(sentence, index, nextCount));
+  const detailItems = snapshot.completedSentences.map((sentence, index) => createSentenceElement(sentence, index, nextCount, {
+    onRetryCorrection: retryCorrection,
+  }));
   elements.detailTranscript.replaceChildren(...detailItems);
   elements.detailTranscriptEmpty.hidden = detailItems.length > 0;
   elements.interimTranscript.hidden = !snapshot.interimDisplayText;
@@ -494,6 +499,12 @@ function renderTranscript(): void {
     if (shouldFollow) scrollToLatestTranscript();
     else if (!autoFollowTranscript) elements.transcriptScroll.scrollTop = previousScrollTop;
   });
+}
+
+function retryCorrection(sentenceId: string): void {
+  if (!correctionCoordinator?.retry(sentenceId)) {
+    renderCorrectionWarning('この発話は現在再試行できません。');
+  }
 }
 
 function handleTranscriptScroll(): void {

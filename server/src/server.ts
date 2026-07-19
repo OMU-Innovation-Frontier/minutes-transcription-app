@@ -173,6 +173,7 @@ export function createTranscriptionServer(options: TranscriptionServerOptions = 
       for (const client of websocketServer.clients) client.terminate();
       await sessionRegistry.closeAll();
       await providerRuntime?.close();
+      await correctionService.dispose();
       await Promise.all([
         new Promise<void>((resolve) => websocketServer.close(() => resolve())),
         new Promise<void>((resolve, reject) => {

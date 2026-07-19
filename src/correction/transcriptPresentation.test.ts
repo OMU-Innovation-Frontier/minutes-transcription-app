@@ -7,7 +7,7 @@ function sentence(correction?: CompletedSentence['correction']): CompletedSenten
   return {
     id: 'sentence-1', sessionId: 'session-1', rawSegmentIds: ['session-1:segment-1'],
     rawText: '原文です', displayText: '原文です。', language: 'ja', startTime: 0, endTime: 1,
-    completionReason: 'silence', correction,
+    completionReason: 'silence', revision: 0, correction,
   };
 }
 
@@ -52,6 +52,7 @@ describe('correction status presentation', () => {
     enabled: false, provider: 'mock', externalTransmission: false, concurrency: 1,
     timeoutMs: 8000, maxInputChars: 4000, removeFillers: false,
     correctionPolicyVersion: 'safe-correction-v1', glossaryEntryCount: 0,
+    model: 'deterministic-mock-v1', queueLimit: 100, maxAttempts: 3,
   };
 
   it('labels disabled correction as fully local and states the default', () => {
