@@ -1,5 +1,5 @@
 import './styles.css';
-import type { FinalMeetingSummary, LiveMeetingSummary, MeetingUsageSummary } from '../shared/summary';
+import type { LiveMeetingSummary, MeetingUsageSummary } from '../shared/summary';
 import type { CorrectionServiceStatus } from '../shared/correction';
 import { AudioCapture } from './audio/audioCapture';
 import type { AudioChunkSink, CaptureState, MicrophoneError } from './audio/types';
@@ -24,11 +24,12 @@ import {
   transitionAppView,
   type AppViewState,
 } from './ui/appView';
-import { presentFinalSummary, presentLiveSummary } from './ui/liveSummaryView';
+import { presentLiveSummary } from './ui/liveSummaryView';
 import { followStateAfterScroll, shouldFollowTranscriptUpdate } from './ui/scrollFollow';
 import { createRawSegmentElement, createSentenceElement } from './ui/transcriptView';
 import { buildMeetingSetupSummary, createInitialMeetingSetupDraft, createMeetingSettingsSnapshot, meetingTranscriptionCatalog, type MeetingSettingsSnapshot, type MeetingSetupDraft } from './meetingSetup/meetingSetup';
 import { renderMeetingSettingsSummary } from './meetingSetup/meetingSettingsSummary';
+import { FinalMeetingSummaryController, renderFinalMeetingSummary } from './summary/finalMeetingSummary';
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -158,7 +159,7 @@ let summaryCoordinator: IncrementalSummaryCoordinator | null = null;
 let correctionCoordinator: CorrectionCoordinator | null = null;
 const correctionCoordinators: CorrectionCoordinator[] = [];
 let latestLiveSummary: LiveMeetingSummary | null = null;
-let latestFinalSummary: FinalMeetingSummary | null = null;
+let latestSummaryStatus: SummaryStatus | null = null;
 let autoFollowTranscript = true;
 let renderedSentenceCount = 0;
 let renderedInterimText = '';
@@ -167,6 +168,7 @@ const summaryClient = new SummaryHttpClient();
 const correctionClient = new CorrectionHttpClient();
 const transcriptStore = new TranscriptStore({ onChange: handleTranscriptChange });
 const localEvaluationRecorder = initializeLocalEvaluationRecorder();
+const finalSummaryController = new FinalMeetingSummaryController(() => renderDetailView());
 
 const recognitionOption = elements.providerSelect.querySelector<HTMLOptionElement>('option[value="browser"]');
 if (recognitionOption && !isBrowserSpeechRecognitionSupported()) {
@@ -281,7 +283,8 @@ function resetMeetingData(): void {
   transcriptStore.clear();
   currentSessionId = '';
   latestLiveSummary = null;
-  latestFinalSummary = null;
+  latestSummaryStatus = null;
+  finalSummaryController.reset();
   meetingHasRecorded = false;
   renderedSentenceCount = 0;
   renderedInterimText = '';
@@ -396,26 +399,39 @@ async function pauseSession(): Promise<void> {
 }
 
 async function finishMeeting(): Promise<void> {
-  if (sessionTransition || !appState.meetingStarted) return;
+  if (sessionTransition || !appState.meetingStarted || appState.meetingEnded) return;
   closeEndMeetingDialog();
   if (captureState !== 'idle') await pauseSession();
   sessionTransition = true;
   renderControls();
-  await summaryCoordinator?.finalize(transcriptStore.snapshot().completedSentences);
   meetingEndedAt = Date.now();
   window.clearInterval(elapsedTimer);
   elapsedTimer = undefined;
   appState = transitionAppView(appState, 'end-meeting');
+  setAppState(appState);
+  const settings = meetingSettingsSnapshot;
+  if (settings?.finalSummaryEnabled && !summaryCoordinator) {
+    summaryCoordinator = createSummaryCoordinator(currentMeetingId);
+  }
+  await finalSummaryController.complete({
+    meetingId: currentMeetingId,
+    settings,
+    sentences: transcriptStore.snapshot().completedSentences,
+    provider: () => latestSummaryStatus?.provider ?? null,
+    finalize: async (sentences) => {
+      if (!summaryCoordinator) return null;
+      if (settings?.liveSummaryEnabled) await summaryCoordinator.flushLive();
+      return summaryCoordinator.finalize(sentences);
+    },
+  });
   sessionTransition = false;
   renderDetailView();
-  setAppState(appState);
 }
 
 function createSummaryCoordinator(meetingId: string): IncrementalSummaryCoordinator {
   return new IncrementalSummaryCoordinator(summaryClient, meetingId, envNumber('VITE_SUMMARY_SENTENCE_BATCH_SIZE', 3), {
     onStatus: renderSummaryStatus,
     onLiveSummary: renderLiveSummary,
-    onFinalSummary: renderFinalSummary,
     onUsage: renderUsage,
     onError: (error) => renderSummaryWarning(error.message),
   });
@@ -432,7 +448,7 @@ function handleTranscriptChange(): void {
   const snapshot = transcriptStore.snapshot();
   renderTranscript();
   correctionCoordinator?.add(snapshot.completedSentences);
-  summaryCoordinator?.add(snapshot.completedSentences);
+  if (meetingSettingsSnapshot?.liveSummaryEnabled) summaryCoordinator?.add(snapshot.completedSentences);
 }
 
 function renderCaptureState(state: CaptureState): void {
@@ -586,6 +602,7 @@ function renderCorrectionWarning(message: string): void {
 }
 
 function renderSummaryStatus(status: SummaryStatus): void {
+  latestSummaryStatus = status;
   elements.summaryProviderStatus.textContent = !status.enabled
     ? '簡易要約は未使用'
     : status.provider === 'openai' ? 'クラウド要約を使用中' : 'ローカルMock要約';
@@ -604,21 +621,6 @@ function renderLiveSummary(summary: LiveMeetingSummary): void {
   renderDetailView();
 }
 
-function renderFinalSummary(summary: FinalMeetingSummary): void {
-  latestFinalSummary = summary;
-  const heading = document.createElement('p');
-  heading.textContent = summary.overview;
-  const list = document.createElement('ul');
-  for (const item of [...summary.keyPoints, ...summary.decisions, ...summary.unresolvedItems, ...summary.nextChecks]) {
-    const row = document.createElement('li');
-    row.textContent = item.text;
-    list.append(row);
-  }
-  elements.finalSummary.replaceChildren(heading, list);
-  elements.finalSummary.hidden = false;
-  renderDetailView();
-}
-
 function resetSummaryView(): void {
   elements.summaryEmpty.hidden = false;
   elements.summaryContent.hidden = true;
@@ -627,19 +629,20 @@ function resetSummaryView(): void {
   replaceList(elements.summaryDecisions, []);
   replaceList(elements.summaryActions, []);
   replaceList(elements.summaryQuestions, []);
-  elements.finalSummary.replaceChildren();
-  elements.finalSummary.hidden = true;
-  elements.detailSummaryText.textContent = presentFinalSummary(null);
+  renderFinalMeetingSummary(elements.detailSummaryText, elements.finalSummary, finalSummaryController.state);
 }
 
 function renderDetailView(): void {
   elements.detailTitle.textContent = meetingTitle();
   const date = meetingStartedAt ?? Date.now();
   elements.detailDate.textContent = `${formatMeetingDate(date)}${meetingEndedAt ? ` ・ ${formatDuration(meetingEndedAt - date)}` : ''}`;
-  if (latestFinalSummary) elements.detailSummaryText.textContent = presentFinalSummary(latestFinalSummary);
-  else {
+  if (finalSummaryController.state.status === 'idle' && latestLiveSummary) {
     const live = presentLiveSummary(latestLiveSummary);
     elements.detailSummaryText.textContent = live.topic;
+    elements.finalSummary.replaceChildren();
+    elements.finalSummary.hidden = true;
+  } else {
+    renderFinalMeetingSummary(elements.detailSummaryText, elements.finalSummary, finalSummaryController.state);
   }
 }
 

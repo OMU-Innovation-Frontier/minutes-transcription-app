@@ -22,6 +22,13 @@ export class MockSummaryProvider implements SummaryProvider {
 
   async createFinalSummary(input: FinalSummaryInput): Promise<FinalMeetingSummary> {
     const items = input.sentences.map((sentence) => ({ text: sentence.text, evidenceSentenceIds: [sentence.id] }));
+    const actionItems = mergeActionItems(
+      input.liveSummary?.actionItems ?? [],
+      input.sentences.flatMap((sentence) => {
+        const task = explicitTodo(sentence.text);
+        return task ? [{ task, assignee: null, dueDate: null, evidenceSentenceIds: [sentence.id] }] : [];
+      }),
+    );
     return {
       version: (input.liveSummary?.version ?? 0) + 1,
       overview: input.sentences.length === 0 ? '発言はありません。' : `${input.sentences.length}文の会議記録です。`,
@@ -29,8 +36,28 @@ export class MockSummaryProvider implements SummaryProvider {
       keyPoints: items,
       decisions: input.liveSummary?.decisions ?? [],
       unresolvedItems: input.liveSummary?.openQuestions ?? [],
-      actionItems: input.liveSummary?.actionItems ?? [],
+      actionItems,
       nextChecks: input.liveSummary?.openQuestions ?? [],
     };
   }
+}
+
+function explicitTodo(text: string): string | null {
+  const match = text.trim().match(/^(?:\[TODO\]|TODO)\s*[:：]\s*(.+)$/iu);
+  return match?.[1]?.trim() || null;
+}
+
+function mergeActionItems(
+  existing: FinalMeetingSummary['actionItems'],
+  additions: FinalMeetingSummary['actionItems'],
+): FinalMeetingSummary['actionItems'] {
+  const tasks = new Set(existing.map((item) => item.task));
+  return [
+    ...existing.map((item) => ({ ...item, evidenceSentenceIds: [...item.evidenceSentenceIds] })),
+    ...additions.filter((item) => {
+      if (tasks.has(item.task)) return false;
+      tasks.add(item.task);
+      return true;
+    }),
+  ];
 }
