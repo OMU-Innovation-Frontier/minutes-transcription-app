@@ -41,9 +41,13 @@
                 <h2 id="history-title">これまでの会議</h2>
               </div>
             </div>
-            <div id="home-history-empty" class="empty-state">
-              <strong>まだ保存された会議はありません</strong>
-              <p>新しい会議を始めると、終了した会議がこのページを開いている間だけここに表示されます。</p>
+            <div id="home-history-status" class="history-status" role="status" aria-live="polite">
+              <p id="home-history-status-message">会議履歴を読み込んでいます。</p>
+              <button id="home-history-retry-button" class="text-button" type="button" hidden>履歴を再読み込み</button>
+            </div>
+            <div id="home-history-empty" class="empty-state" hidden>
+              <strong>保存された会議履歴はありません</strong>
+              <p>新しい会議を終了すると、この端末に保存された履歴がここに表示されます。</p>
             </div>
             <ol id="meeting-history-list" class="history-list" hidden></ol>
           </section>

@@ -7,6 +7,11 @@ import { CorrectionCoordinator, CorrectionHttpClient } from './correction/correc
 import { correctionStatusPresentation } from './correction/transcriptPresentation';
 import { initializeLocalEvaluationRecorder } from './localRecording/localEvaluationRecorder';
 import { IndexedDbMeetingHistoryRepository } from './history/indexedDbMeetingHistoryRepository';
+import { MeetingHistoryListController } from './history/meetingHistoryListController';
+import {
+  renderMeetingHistoryList,
+  type CurrentPageMeetingHistoryItem,
+} from './history/meetingHistoryListView';
 import {
   createEndedMeetingSnapshot,
   MEETING_HISTORY_SAVE_WARNING,
@@ -72,6 +77,9 @@ const elements = {
   resumeMeetingButton: requiredElement<HTMLButtonElement>('resume-meeting-button'),
   homeActiveMeeting: requiredElement<HTMLElement>('home-active-meeting'),
   homeHistoryEmpty: requiredElement<HTMLElement>('home-history-empty'),
+  homeHistoryStatus: requiredElement<HTMLElement>('home-history-status'),
+  homeHistoryStatusMessage: requiredElement<HTMLElement>('home-history-status-message'),
+  homeHistoryRetryButton: requiredElement<HTMLButtonElement>('home-history-retry-button'),
   meetingHistoryList: requiredElement<HTMLOListElement>('meeting-history-list'),
   homeConnectionError: requiredElement<HTMLElement>('home-connection-error'),
   meetingHomeButton: requiredElement<HTMLButtonElement>('meeting-home-button'),
@@ -181,11 +189,18 @@ const summaryClient = new SummaryHttpClient();
 const correctionClient = new CorrectionHttpClient();
 const transcriptStore = new TranscriptStore({ onChange: handleTranscriptChange });
 const localEvaluationRecorder = initializeLocalEvaluationRecorder();
-const finalSummaryController = new FinalMeetingSummaryController(() => renderDetailView());
+const finalSummaryController = new FinalMeetingSummaryController(() => {
+  renderDetailView();
+  renderHomeState();
+});
 const meetingHistoryRepository = createMeetingHistoryRepository();
 const meetingHistoryPersistence = new MeetingHistoryPersistenceCoordinator(
   meetingHistoryRepository,
   renderSummaryWarning,
+);
+const meetingHistoryListController = new MeetingHistoryListController(
+  meetingHistoryRepository,
+  renderHomeState,
 );
 
 const recognitionOption = elements.providerSelect.querySelector<HTMLOptionElement>('option[value="browser"]');
@@ -216,6 +231,7 @@ elements.setupCancelSecondary.addEventListener('click', cancelMeetingSetup);
 elements.setupForm.addEventListener('submit', (event) => { event.preventDefault(); createMeetingFromSetup(); });
 for (const input of [elements.setupTitle, elements.setupLanguage, elements.setupProvider, elements.setupCorrection, elements.setupLiveSummary, elements.setupFinalSummary, elements.setupExternalAck]) input.addEventListener('input', renderMeetingSetup);
 elements.resumeMeetingButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'resume-meeting')));
+elements.homeHistoryRetryButton.addEventListener('click', () => void meetingHistoryListController.retry());
 elements.meetingHomeButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'open-home')));
 elements.detailHomeButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'open-home')));
 elements.homeSettingsButton.addEventListener('click', openSettings);
@@ -251,6 +267,7 @@ window.addEventListener('pagehide', () => {
   summaryCoordinator?.dispose();
   for (const coordinator of correctionCoordinators) coordinator.dispose();
   meetingHistoryPersistence.dispose();
+  meetingHistoryListController.dispose();
   localEvaluationRecorder.dispose();
   void capture.stop();
   void provider.abort();
@@ -448,7 +465,10 @@ async function finishMeeting(): Promise<void> {
   elapsedTimer = undefined;
   appState = transitionAppView(appState, 'end-meeting');
   setAppState(appState);
-  if (endedSnapshot) await meetingHistoryPersistence.saveEndedMeeting(endedSnapshot);
+  const initialHistorySaved = endedSnapshot
+    ? await meetingHistoryPersistence.saveEndedMeeting(endedSnapshot)
+    : false;
+  if (initialHistorySaved) void meetingHistoryListController.refresh();
   if (endedSnapshot && (!meetingHistoryPersistence.isActive(endedSnapshot) || endedMeetingSnapshot !== endedSnapshot)) {
     sessionTransition = false;
     return;
@@ -458,12 +478,13 @@ async function finishMeeting(): Promise<void> {
   }
   const finalSummaryState = await finalSummaryController.complete(createFinalSummaryOptions(endedSnapshot));
   if (endedSnapshot) {
-    await saveSucceededFinalSummary(
+    const finalSummarySaved = await saveSucceededFinalSummary(
       meetingHistoryPersistence,
       endedSnapshot,
       finalSummaryState,
       latestSummaryStatus?.apiUsed ?? null,
     );
+    if (finalSummarySaved) void meetingHistoryListController.refresh();
   }
   sessionTransition = false;
   renderDetailView();
@@ -494,12 +515,13 @@ async function retryFinalMeetingSummary(): Promise<void> {
   }
   const finalSummaryState = await finalSummaryController.retry(options);
   if (snapshot) {
-    await saveSucceededFinalSummary(
+    const finalSummarySaved = await saveSucceededFinalSummary(
       meetingHistoryPersistence,
       snapshot,
       finalSummaryState,
       latestSummaryStatus?.apiUsed ?? null,
     );
+    if (finalSummarySaved) void meetingHistoryListController.refresh();
   }
 }
 
@@ -762,26 +784,26 @@ function renderHomeState(): void {
   const active = appState.meetingStarted && !appState.meetingEnded;
   elements.homeActiveMeeting.hidden = !active;
   elements.newMeetingButton.hidden = active;
-  const hasHistory = appState.meetingEnded;
-  elements.homeHistoryEmpty.hidden = hasHistory;
-  elements.meetingHistoryList.hidden = !hasHistory;
-  if (!hasHistory) {
-    elements.meetingHistoryList.replaceChildren();
-    return;
-  }
-  const item = document.createElement('li');
-  const button = document.createElement('button');
-  button.type = 'button';
-  const title = document.createElement('strong');
-  title.textContent = meetingTitle();
-  const date = document.createElement('time');
-  date.textContent = formatMeetingDate(meetingStartedAt ?? Date.now());
-  const note = document.createElement('span');
-  note.textContent = 'このページ内で保持中';
-  button.append(title, date, note);
-  button.addEventListener('click', () => setAppState(transitionAppView(appState, 'open-detail')));
-  item.append(button);
-  elements.meetingHistoryList.replaceChildren(item);
+  renderMeetingHistoryList({
+    list: elements.meetingHistoryList,
+    empty: elements.homeHistoryEmpty,
+    status: elements.homeHistoryStatus,
+    statusMessage: elements.homeHistoryStatusMessage,
+    retryButton: elements.homeHistoryRetryButton,
+  }, meetingHistoryListController.state, currentPageMeetingHistory(), (value) => formatMeetingDate(Date.parse(value)));
+}
+
+function currentPageMeetingHistory(): CurrentPageMeetingHistoryItem | null {
+  const snapshot = endedMeetingSnapshot;
+  if (!appState.meetingEnded || !snapshot) return null;
+  return {
+    meetingId: snapshot.meetingId,
+    title: snapshot.title,
+    occurredAt: snapshot.endedAt,
+    utteranceCount: snapshot.sentences.length,
+    hasFinalSummary: finalSummaryController.state.status === 'succeeded',
+    openDetail: () => setAppState(transitionAppView(appState, 'open-detail')),
+  };
 }
 
 function openSettings(): void {
@@ -919,6 +941,7 @@ function createMeetingHistoryRepository(): IndexedDbMeetingHistoryRepository | n
 
 renderProviderDetails();
 renderMeetingSettingsSummary(elements.meetingSettingsSummary, meetingSettingsSnapshot);
+void meetingHistoryListController.load();
 setAppState(appState);
 renderCaptureState('idle');
 renderTranscriptionState('disconnected');

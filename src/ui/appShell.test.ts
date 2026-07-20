@@ -22,8 +22,17 @@ describe('application shell markup', () => {
   });
 
   it('shows a truthful empty state instead of fictional meeting history', () => {
-    expect(document.querySelector('#home-history-empty')?.textContent).toContain('まだ保存された会議はありません');
+    expect(document.querySelector('#home-history-empty')?.textContent).toContain('保存された会議履歴はありません');
     expect(document.querySelector('#meeting-history-list')?.children).toHaveLength(0);
+  });
+
+  it('provides a dedicated accessible history status and retry action', () => {
+    const status = document.querySelector<HTMLElement>('#home-history-status');
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    expect(status?.hidden).toBe(false);
+    expect(status?.textContent).toContain('会議履歴を読み込んでいます');
+    expect(document.querySelector<HTMLElement>('#home-history-empty')?.hidden).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('#home-history-retry-button')?.textContent).toContain('履歴を再読み込み');
   });
 
   it('places recording controls in the bottom meeting control bar', () => {
@@ -64,10 +73,24 @@ describe('application shell markup', () => {
     expect(mainSource).not.toContain('localStorage');
   });
 
-  it('creates one IndexedDB history repository without startup hydrate or history listing', () => {
+  it('creates one IndexedDB repository and starts one list load without detail hydration', () => {
     expect(mainSource.match(/new IndexedDbMeetingHistoryRepository\(window\.indexedDB\)/gu)).toHaveLength(1);
-    expect(mainSource).not.toContain('meetingHistoryRepository.list(');
+    expect(mainSource.match(/meetingHistoryListController\.load\(\)/gu)).toHaveLength(1);
+    expect(mainSource).not.toContain('meetingHistoryRepository.getById(');
     expect(mainSource).not.toContain('meetingHistoryPersistence.hydrate');
+  });
+
+  it('refreshes the list only after successful initial, final-summary, or retry saves', () => {
+    expect(mainSource).toContain('if (initialHistorySaved) void meetingHistoryListController.refresh()');
+    expect(mainSource.match(/if \(finalSummarySaved\) void meetingHistoryListController\.refresh\(\)/gu)).toHaveLength(2);
+  });
+
+  it('does not clear persistent list state when current meeting data is reset', () => {
+    const resetStart = mainSource.indexOf('function resetMeetingData()');
+    const resetEnd = mainSource.indexOf('async function startSession()', resetStart);
+    const resetSource = mainSource.slice(resetStart, resetEnd);
+    expect(resetSource).not.toContain('meetingHistoryListController');
+    expect(resetSource).not.toContain('meetingHistoryRepository');
   });
 
   it('saves the ended snapshot before finalization and retries from the fixed snapshot', () => {
@@ -84,6 +107,7 @@ describe('application shell markup', () => {
   });
 
   it('closes history storage on pagehide without clearing saved history', () => {
+    expect(mainSource).toContain('meetingHistoryListController.dispose()');
     expect(mainSource).toContain('meetingHistoryRepository?.close().catch(() => undefined)');
     expect(mainSource).not.toContain('meetingHistoryRepository?.clear()');
     expect(mainSource).not.toContain('meetingHistoryRepository.clear()');
