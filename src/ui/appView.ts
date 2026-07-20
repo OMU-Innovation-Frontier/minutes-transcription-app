@@ -6,7 +6,7 @@ export interface AppViewState {
   meetingEnded: boolean;
 }
 
-export type AppViewAction = 'open-meeting-setup' | 'cancel-meeting-setup' | 'create-meeting' | 'start-meeting' | 'open-home' | 'resume-meeting' | 'end-meeting' | 'open-detail';
+export type AppViewAction = 'open-meeting-setup' | 'cancel-meeting-setup' | 'create-meeting' | 'start-meeting' | 'open-home' | 'resume-meeting' | 'end-meeting' | 'open-detail' | 'open-persisted-detail';
 
 export interface AppViewSections {
   home: HTMLElement;
@@ -37,6 +37,8 @@ export function transitionAppView(state: AppViewState, action: AppViewAction): A
       return state.meetingStarted ? { view: 'meeting-detail', meetingStarted: true, meetingEnded: true } : state;
     case 'open-detail':
       return state.meetingEnded ? { ...state, view: 'meeting-detail' } : state;
+    case 'open-persisted-detail':
+      return { ...state, view: 'meeting-detail' };
   }
 }
 

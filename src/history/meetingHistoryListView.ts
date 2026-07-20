@@ -33,9 +33,10 @@ export function renderMeetingHistoryList(
   state: MeetingHistoryListState,
   currentMeeting: CurrentPageMeetingHistoryItem | null,
   formatDate: (isoDate: string) => string = formatHistoryDate,
+  onOpenPersisted?: (meetingId: string) => void,
 ): void {
   if (state.status === 'disposed') return;
-  const items = mergeMeetingHistory(state.records, currentMeeting);
+  const items = mergeMeetingHistory(state.records, currentMeeting, onOpenPersisted);
   elements.list.replaceChildren(...items.map((item) => renderHistoryItem(item, formatDate)));
   elements.list.hidden = items.length === 0;
   elements.empty.hidden = true;
@@ -71,8 +72,16 @@ export function renderMeetingHistoryList(
 export function mergeMeetingHistory(
   records: readonly MeetingRecord[],
   currentMeeting: CurrentPageMeetingHistoryItem | null,
+  onOpenPersisted?: (meetingId: string) => void,
 ): readonly MeetingHistoryDisplayItem[] {
-  const persisted = records.map(toDisplayItem);
+  const persisted = records.map((record) => {
+    const item = toDisplayItem(record);
+    const meetingId = item.meetingId;
+    return {
+      ...item,
+      openDetail: onOpenPersisted ? () => onOpenPersisted(meetingId) : undefined,
+    };
+  });
   if (!currentMeeting) return persisted;
   const currentIndex = persisted.findIndex(({ meetingId }) => meetingId === currentMeeting.meetingId);
   if (currentIndex >= 0) {
@@ -84,9 +93,10 @@ export function mergeMeetingHistory(
 }
 
 function toDisplayItem(record: MeetingRecord): MeetingHistoryDisplayItem {
+  const title = record.title?.trim() || record.settingsSnapshot.title.trim() || '無題の会議';
   return {
     meetingId: record.meetingId,
-    title: record.title ?? record.settingsSnapshot.title ?? '無題の会議',
+    title,
     occurredAt: record.endedAt ?? record.startedAt ?? record.createdAt,
     utteranceCount: record.transcript.utterances.length,
     hasFinalSummary: record.finalSummary !== null,
@@ -105,6 +115,7 @@ function renderHistoryItem(
   const openDetail = item.openDetail;
   if (surface instanceof HTMLButtonElement && openDetail) {
     surface.type = 'button';
+    surface.setAttribute('aria-label', `「${item.title}」の詳細を開く（${formatDate(item.occurredAt)}）`);
     surface.addEventListener('click', openDetail);
   }
 

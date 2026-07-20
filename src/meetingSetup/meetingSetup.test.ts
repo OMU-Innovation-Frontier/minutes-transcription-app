@@ -42,6 +42,11 @@ describe('meeting setup draft and snapshot', () => {
     expect(summary.length).toBe(8);
     expect(summary.join('\n')).toContain('TODO');
     expect(summary.join('\n')).toContain('ページ');
+    expect(summary.join('\n')).toContain('端末のブラウザー内へ保存');
+    expect(summary.join('\n')).toContain('ページを閉じて開き直しても確認できます');
+    expect(summary.join('\n')).toContain('サイトデータを削除すると失われ');
+    expect(summary.join('\n')).toContain('クラウド保存・チーム共有・アカウント保護には対応していません');
+    expect(summary.join('\n')).not.toContain('再読み込み後は復元されません');
   });
 
   it('renders user-controlled summary text as text, not markup', () => {

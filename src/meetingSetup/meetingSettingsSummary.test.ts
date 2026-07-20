@@ -30,10 +30,13 @@ describe('meeting settings summary', () => {
       provider: 'ブラウザー音声認識',
       correction: '確定した発言を整文します',
       summary: '会議中の簡易要約と、会議終了後の最終要約・TODOを使用します',
-      historyRetention: expect.stringContaining('現在のページ'),
+      historyRetention: expect.stringContaining('端末のブラウザー内へ保存'),
       createdAt: '2026年7月19日 12:04',
       externalProcessingRequired: true,
     });
+    expect(summary.historyRetention).toContain('端末のブラウザー内へ保存');
+    expect(summary.historyRetention).toContain('別の端末やブラウザープロフィールには同期されません');
+    expect(summary.historyRetention).toContain('クラウド保存・チーム共有・アカウント保護には対応していません');
     expect(summary.provider).not.toBe('browser');
   });
 

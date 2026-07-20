@@ -73,16 +73,18 @@ describe('application shell markup', () => {
     expect(mainSource).not.toContain('localStorage');
   });
 
-  it('creates one IndexedDB repository and starts one list load without detail hydration', () => {
+  it('creates one IndexedDB repository, list controller, and detail controller without runtime hydration', () => {
     expect(mainSource.match(/new IndexedDbMeetingHistoryRepository\(window\.indexedDB\)/gu)).toHaveLength(1);
     expect(mainSource.match(/meetingHistoryListController\.load\(\)/gu)).toHaveLength(1);
+    expect(mainSource.match(/new MeetingHistoryDetailController\(/gu)).toHaveLength(1);
     expect(mainSource).not.toContain('meetingHistoryRepository.getById(');
     expect(mainSource).not.toContain('meetingHistoryPersistence.hydrate');
+    expect(mainSource).not.toContain('transcriptStore.hydrate');
   });
 
   it('refreshes the list only after successful initial, final-summary, or retry saves', () => {
-    expect(mainSource).toContain('if (initialHistorySaved) void meetingHistoryListController.refresh()');
-    expect(mainSource.match(/if \(finalSummarySaved\) void meetingHistoryListController\.refresh\(\)/gu)).toHaveLength(2);
+    expect(mainSource).toMatch(/if \(initialHistorySaved\) \{[\s\S]*?meetingHistoryListController\.refresh\(\)/u);
+    expect(mainSource.match(/if \(finalSummarySaved\) \{[\s\S]*?meetingHistoryListController\.refresh\(\)/gu)).toHaveLength(2);
   });
 
   it('does not clear persistent list state when current meeting data is reset', () => {
@@ -108,9 +110,40 @@ describe('application shell markup', () => {
 
   it('closes history storage on pagehide without clearing saved history', () => {
     expect(mainSource).toContain('meetingHistoryListController.dispose()');
+    expect(mainSource).toContain('meetingHistoryDetailController.dispose()');
     expect(mainSource).toContain('meetingHistoryRepository?.close().catch(() => undefined)');
     expect(mainSource).not.toContain('meetingHistoryRepository?.clear()');
     expect(mainSource).not.toContain('meetingHistoryRepository.clear()');
+  });
+
+  it('provides safe persisted-detail loading and retry markup', () => {
+    const status = document.querySelector('#detail-history-status');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    expect(document.querySelector<HTMLButtonElement>('#detail-history-retry-button')?.textContent)
+      .toContain('詳細を再読み込み');
+    expect(document.querySelector('#detail-persistence-note')).not.toBeNull();
+    expect(document.querySelector('#history-title')?.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('explains browser-local persistence without legacy page-session claims', () => {
+    const pageText = document.body.textContent ?? '';
+    expect(pageText).toContain('ページを閉じて開き直しても確認できます');
+    expect(pageText).toContain('サイトデータを削除すると失われ');
+    expect(pageText).toContain('別の端末やブラウザープロフィールには同期されません');
+    expect(pageText).toContain('クラウド保存・チーム共有・アカウント保護には対応していません');
+    expect(pageText).not.toMatch(/再読み込み.*復元されません/u);
+  });
+
+  it('keeps persisted detail separate from current transcript and final-summary state', () => {
+    expect(mainSource).toContain("meetingDetailSource?.kind === 'persisted'");
+    expect(mainSource).toContain("meetingDetailSource?.kind !== 'persisted'");
+    expect(mainSource).toContain("meetingHistoryDetailController.open(meetingId)");
+    expect(mainSource).toContain("transitionAppView(appState, 'open-persisted-detail')");
+  });
+
+  it('clears persisted selection and restores focus to the history heading on return home', () => {
+    expect(mainSource).toMatch(/const returningFromPersistedDetail = meetingDetailSource\?\.kind === 'persisted';[\s\S]*?clearPersistedMeetingDetail\(\);[\s\S]*?elements\.historyTitle\.focus\(\);/u);
   });
 
   it('keeps developer controls closed by default', () => {

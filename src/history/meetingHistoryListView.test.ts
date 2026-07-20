@@ -74,17 +74,43 @@ describe('meeting history list view', () => {
     expect(elements.list.textContent).toContain('<img src=x onerror=alert(1)>');
   });
 
-  it('keeps past persisted meetings static and makes only the current page meeting interactive', () => {
+  it('opens persisted records by ID while keeping the current page meeting on its current-detail callback', () => {
     const openDetail = vi.fn();
+    const openPersisted = vi.fn();
     const records = [recordFixture('meeting-current'), recordFixture('meeting-past')];
-    renderMeetingHistoryList(elements, ready(records), currentFixture('meeting-current', openDetail));
+    renderMeetingHistoryList(elements, ready(records), currentFixture('meeting-current', openDetail), undefined, openPersisted);
 
     expect(elements.list.children).toHaveLength(2);
-    expect(elements.list.querySelectorAll('button')).toHaveLength(1);
-    expect(elements.list.querySelector('button')?.textContent).toContain('会議 meeting-current');
-    expect(elements.list.querySelectorAll('article')).toHaveLength(1);
-    elements.list.querySelector('button')?.click();
+    const buttons = [...elements.list.querySelectorAll('button')];
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]?.textContent).toContain('会議 meeting-current');
+    expect(buttons[1]?.getAttribute('aria-label')).toContain('「会議 meeting-past」の詳細を開く（');
+    expect(buttons[1]?.getAttribute('aria-label')).toContain('2026');
+    buttons[0]?.click();
+    buttons[1]?.click();
     expect(openDetail).toHaveBeenCalledTimes(1);
+    expect(openPersisted).toHaveBeenCalledTimes(1);
+    expect(openPersisted).toHaveBeenCalledWith('meeting-past');
+  });
+
+  it('does not retain a whole persisted record in the click callback contract', () => {
+    const openPersisted = vi.fn();
+    renderMeetingHistoryList(
+      elements,
+      ready([recordFixture('meeting-past')]),
+      null,
+      () => '表示日時',
+      openPersisted,
+    );
+    elements.list.querySelector<HTMLButtonElement>('button')?.click();
+    expect(openPersisted).toHaveBeenCalledWith('meeting-past');
+    expect(openPersisted.mock.calls[0]).toHaveLength(1);
+  });
+
+  it('keeps persisted records static when no detail callback is supplied', () => {
+    renderMeetingHistoryList(elements, ready([recordFixture('meeting-past')]), null);
+    expect(elements.list.querySelector('button')).toBeNull();
+    expect(elements.list.querySelector('article')).not.toBeNull();
   });
 
   it('prepends an unsaved current page meeting and removes it when the same persisted ID appears', () => {

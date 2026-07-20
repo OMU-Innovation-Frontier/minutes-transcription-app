@@ -38,7 +38,7 @@
             <div class="section-heading">
               <div>
                 <p class="section-kicker">RECENT</p>
-                <h2 id="history-title">これまでの会議</h2>
+                <h2 id="history-title" tabindex="-1">これまでの会議</h2>
               </div>
             </div>
             <div id="home-history-status" class="history-status" role="status" aria-live="polite">
@@ -64,7 +64,7 @@
             <fieldset><legend>会議の基本情報</legend><label class="field"><span>会議タイトル</span><input id="setup-title" required maxlength="80" aria-describedby="setup-title-error" /><span id="setup-title-error" class="inline-alert" role="alert"></span></label><label class="field"><span>言語</span><select id="setup-language"><option value="ja-JP">日本語</option><option value="en-US">English</option></select></label></fieldset>
             <fieldset><legend>文字起こし方法</legend><label class="field"><span>方法</span><select id="setup-provider"><option value="local-whisper">Local Whisper</option><option value="browser">ブラウザー音声認識</option><option value="mock">Mock（開発者向け）</option><option value="websocket">WebSocket（開発者向け）</option></select></label><p id="setup-provider-description" class="privacy-copy"></p></fieldset>
             <fieldset><legend>会議中に使用する機能</legend><label><input id="setup-correction" type="checkbox" /> 確定した発言を読みやすい文章に整える</label><label><input id="setup-live-summary" type="checkbox" /> 会議中に簡易要約を表示する</label><label><input id="setup-final-summary" type="checkbox" /> 会議終了後に最終要約とTODOを作る</label></fieldset>
-            <fieldset><legend>会議履歴</legend><p>このページを開いている間だけ保持します。ページ再読み込み後は復元されません。</p></fieldset>
+            <fieldset><legend>会議履歴</legend><p>会議終了後、履歴はこの端末のブラウザー内へ保存され、ページを閉じて開き直しても確認できます。サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。クラウド保存・チーム共有・アカウント保護には対応していません。</p></fieldset>
             <fieldset id="setup-external-confirmation" hidden><legend>外部処理の確認</legend><p>この方法では音声処理がアプリだけで完結しない可能性があります。</p><label><input id="setup-external-ack" type="checkbox" /> データの処理方法を確認しました</label></fieldset>
             <section aria-live="polite" class="setup-summary"><h2>この会議の設定</h2><ul id="setup-summary-list"></ul></section>
             <div class="setup-actions"><button id="setup-create-button" class="primary-action" type="submit">この設定で会議を作成</button><button id="setup-cancel-button-secondary" class="secondary-button" type="button">キャンセルしてホームへ戻る</button></div>
@@ -172,17 +172,21 @@
           <p class="section-kicker">MEETING COMPLETE</p>
           <h1 id="detail-title">新しい会議</h1>
           <p id="detail-date" class="detail-date"></p>
-          <section class="detail-summary" aria-labelledby="detail-summary-title">
+          <section id="detail-history-status" class="detail-history-status" role="status" aria-live="polite" hidden>
+            <p id="detail-history-status-message"></p>
+            <button id="detail-history-retry-button" class="secondary-button" type="button" hidden>詳細を再読み込み</button>
+          </section>
+          <section id="detail-summary-section" class="detail-summary" aria-labelledby="detail-summary-title">
             <h2 id="detail-summary-title">簡易要約</h2>
             <p id="detail-summary-text" role="status" aria-live="polite">会議内容が増えると、ここに簡易要約が表示されます。</p>
             <div id="final-summary" class="final-summary" aria-label="最終要約とTODO" hidden></div>
           </section>
-          <section class="detail-transcript-section" aria-labelledby="detail-transcript-title">
+          <section id="detail-transcript-section" class="detail-transcript-section" aria-labelledby="detail-transcript-title">
             <h2 id="detail-transcript-title">文字起こし全文</h2>
             <p id="detail-transcript-empty" class="empty-state">文字起こしはありません。</p>
             <ol id="detail-transcript" class="transcript-list transcript-list--detail"></ol>
           </section>
-          <p class="persistence-note">この会議は現在のページを開いている間だけ保持されます。ページを再読み込みすると、会議一覧と全文は復元されません。</p>
+          <p id="detail-persistence-note" class="persistence-note">履歴の保存状態を確認しています。</p>
         </main>
       </section>
 
@@ -252,7 +256,7 @@
         <div class="confirm-dialog__body">
           <p class="section-kicker">END MEETING</p>
           <h2 id="end-dialog-title">この会議を終了しますか？</h2>
-          <p>文字起こし内容は現在のページを開いている間は保持されますが、本格的な会議履歴の保存はまだ実装されていません。</p>
+          <p>会議終了時に、確定した文字起こしと会議情報をこの端末のブラウザー内へ保存します。サイトデータを削除すると履歴は失われます。</p>
           <div class="confirm-dialog__actions"><button id="cancel-end-meeting-button" class="secondary-button" type="button">会議を続ける</button><button id="confirm-end-meeting-button" class="end-button" type="button">終了する</button></div>
         </div>
       </section>

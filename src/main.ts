@@ -8,6 +8,8 @@ import { correctionStatusPresentation } from './correction/transcriptPresentatio
 import { initializeLocalEvaluationRecorder } from './localRecording/localEvaluationRecorder';
 import { IndexedDbMeetingHistoryRepository } from './history/indexedDbMeetingHistoryRepository';
 import { MeetingHistoryListController } from './history/meetingHistoryListController';
+import { MeetingHistoryDetailController } from './history/meetingHistoryDetailController';
+import { renderPersistedMeetingHistoryDetail } from './history/meetingHistoryDetailView';
 import {
   renderMeetingHistoryList,
   type CurrentPageMeetingHistoryItem,
@@ -81,6 +83,7 @@ const elements = {
   homeHistoryStatusMessage: requiredElement<HTMLElement>('home-history-status-message'),
   homeHistoryRetryButton: requiredElement<HTMLButtonElement>('home-history-retry-button'),
   meetingHistoryList: requiredElement<HTMLOListElement>('meeting-history-list'),
+  historyTitle: requiredElement<HTMLElement>('history-title'),
   homeConnectionError: requiredElement<HTMLElement>('home-connection-error'),
   meetingHomeButton: requiredElement<HTMLButtonElement>('meeting-home-button'),
   detailHomeButton: requiredElement<HTMLButtonElement>('detail-home-button'),
@@ -98,9 +101,16 @@ const elements = {
   confirmEndMeetingButton: requiredElement<HTMLButtonElement>('confirm-end-meeting-button'),
   detailTitle: requiredElement<HTMLElement>('detail-title'),
   detailDate: requiredElement<HTMLElement>('detail-date'),
+  detailHistoryStatus: requiredElement<HTMLElement>('detail-history-status'),
+  detailHistoryStatusMessage: requiredElement<HTMLElement>('detail-history-status-message'),
+  detailHistoryRetryButton: requiredElement<HTMLButtonElement>('detail-history-retry-button'),
+  detailSummarySection: requiredElement<HTMLElement>('detail-summary-section'),
+  detailSummaryTitle: requiredElement<HTMLElement>('detail-summary-title'),
   detailSummaryText: requiredElement<HTMLElement>('detail-summary-text'),
+  detailTranscriptSection: requiredElement<HTMLElement>('detail-transcript-section'),
   detailTranscript: requiredElement<HTMLOListElement>('detail-transcript'),
   detailTranscriptEmpty: requiredElement<HTMLElement>('detail-transcript-empty'),
+  detailPersistenceNote: requiredElement<HTMLElement>('detail-persistence-note'),
   startButton: requiredElement<HTMLButtonElement>('start-button'),
   stopButton: requiredElement<HTMLButtonElement>('stop-button'),
   reconnectButton: requiredElement<HTMLButtonElement>('reconnect-button'),
@@ -173,6 +183,9 @@ let meetingEndedAt: number | null = null;
 let meetingHasRecorded = false;
 let meetingSettingsSnapshot: MeetingSettingsSnapshot | null = null;
 let endedMeetingSnapshot: EndedMeetingSnapshot | null = null;
+type MeetingDetailSource = { kind: 'current' } | { kind: 'persisted'; meetingId: string } | null;
+let meetingDetailSource: MeetingDetailSource = null;
+let currentMeetingPersisted = false;
 let meetingSetupDraft: MeetingSetupDraft = createInitialMeetingSetupDraft();
 let reconnectAttempt = 0;
 let reconnectMaxAttempts = 0;
@@ -201,6 +214,10 @@ const meetingHistoryPersistence = new MeetingHistoryPersistenceCoordinator(
 const meetingHistoryListController = new MeetingHistoryListController(
   meetingHistoryRepository,
   renderHomeState,
+);
+const meetingHistoryDetailController = new MeetingHistoryDetailController(
+  meetingHistoryRepository,
+  renderDetailView,
 );
 
 const recognitionOption = elements.providerSelect.querySelector<HTMLOptionElement>('option[value="browser"]');
@@ -233,7 +250,8 @@ for (const input of [elements.setupTitle, elements.setupLanguage, elements.setup
 elements.resumeMeetingButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'resume-meeting')));
 elements.homeHistoryRetryButton.addEventListener('click', () => void meetingHistoryListController.retry());
 elements.meetingHomeButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'open-home')));
-elements.detailHomeButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'open-home')));
+elements.detailHomeButton.addEventListener('click', returnHomeFromDetail);
+elements.detailHistoryRetryButton.addEventListener('click', () => void meetingHistoryDetailController.retry());
 elements.homeSettingsButton.addEventListener('click', openSettings);
 elements.meetingSettingsButton.addEventListener('click', openSettings);
 elements.settingsCloseButton.addEventListener('click', closeSettings);
@@ -264,10 +282,11 @@ window.addEventListener('keydown', (event) => {
 });
 window.addEventListener('pagehide', () => {
   window.clearInterval(elapsedTimer);
+  meetingHistoryListController.dispose();
+  meetingHistoryDetailController.dispose();
   summaryCoordinator?.dispose();
   for (const coordinator of correctionCoordinators) coordinator.dispose();
   meetingHistoryPersistence.dispose();
-  meetingHistoryListController.dispose();
   localEvaluationRecorder.dispose();
   void capture.stop();
   void provider.abort();
@@ -280,6 +299,7 @@ function beginMeeting(): void {
     return;
   }
   if (appState.meetingEnded) resetMeetingData();
+  clearPersistedMeetingDetail();
   meetingSetupDraft = createInitialMeetingSetupDraft(getDefaultProviderKind());
   renderMeetingSetup();
   setAppState(transitionAppView(appState, 'open-meeting-setup'));
@@ -322,6 +342,7 @@ function resetMeetingData(): void {
   latestLiveSummary = null;
   latestSummaryStatus = null;
   endedMeetingSnapshot = null;
+  currentMeetingPersisted = false;
   meetingHistoryPersistence.reset();
   finalSummaryController.reset();
   meetingHasRecorded = false;
@@ -463,12 +484,18 @@ async function finishMeeting(): Promise<void> {
   }
   window.clearInterval(elapsedTimer);
   elapsedTimer = undefined;
+  meetingDetailSource = { kind: 'current' };
+  meetingHistoryDetailController.clear();
   appState = transitionAppView(appState, 'end-meeting');
   setAppState(appState);
   const initialHistorySaved = endedSnapshot
     ? await meetingHistoryPersistence.saveEndedMeeting(endedSnapshot)
     : false;
-  if (initialHistorySaved) void meetingHistoryListController.refresh();
+  if (initialHistorySaved) {
+    currentMeetingPersisted = true;
+    renderDetailView();
+    void meetingHistoryListController.refresh();
+  }
   if (endedSnapshot && (!meetingHistoryPersistence.isActive(endedSnapshot) || endedMeetingSnapshot !== endedSnapshot)) {
     sessionTransition = false;
     return;
@@ -484,7 +511,11 @@ async function finishMeeting(): Promise<void> {
       finalSummaryState,
       latestSummaryStatus?.apiUsed ?? null,
     );
-    if (finalSummarySaved) void meetingHistoryListController.refresh();
+    if (finalSummarySaved) {
+      currentMeetingPersisted = true;
+      renderDetailView();
+      void meetingHistoryListController.refresh();
+    }
   }
   sessionTransition = false;
   renderDetailView();
@@ -521,7 +552,11 @@ async function retryFinalMeetingSummary(): Promise<void> {
       finalSummaryState,
       latestSummaryStatus?.apiUsed ?? null,
     );
-    if (finalSummarySaved) void meetingHistoryListController.refresh();
+    if (finalSummarySaved) {
+      currentMeetingPersisted = true;
+      renderDetailView();
+      void meetingHistoryListController.refresh();
+    }
   }
 }
 
@@ -642,11 +677,9 @@ function renderTranscript(): void {
     }));
   elements.finalTranscript.replaceChildren(...mainItems);
 
-  const detailItems = snapshot.completedSentences.map((sentence, index) => createSentenceElement(sentence, index, nextCount, {
-    onRetryCorrection: retryCorrection,
-  }));
-  elements.detailTranscript.replaceChildren(...detailItems);
-  elements.detailTranscriptEmpty.hidden = detailItems.length > 0;
+  if (meetingDetailSource?.kind !== 'persisted') {
+    renderCurrentDetailTranscript(snapshot.completedSentences);
+  }
   elements.interimTranscript.hidden = !snapshot.interimDisplayText;
   elements.interimText.textContent = snapshot.interimDisplayText;
   elements.transcriptEmpty.hidden = mainItems.length > 0 || Boolean(snapshot.interimDisplayText);
@@ -664,6 +697,15 @@ function renderTranscript(): void {
     if (shouldFollow) scrollToLatestTranscript();
     else if (!autoFollowTranscript) elements.transcriptScroll.scrollTop = previousScrollTop;
   });
+}
+
+function renderCurrentDetailTranscript(sentences = transcriptStore.snapshot().completedSentences): void {
+  const detailItems = sentences.map((sentence, index) => createSentenceElement(sentence, index, sentences.length, {
+    onRetryCorrection: retryCorrection,
+  }));
+  elements.detailTranscript.replaceChildren(...detailItems);
+  elements.detailTranscriptEmpty.textContent = '文字起こしはありません。';
+  elements.detailTranscriptEmpty.hidden = detailItems.length > 0;
 }
 
 function retryCorrection(sentenceId: string): void {
@@ -730,6 +772,30 @@ function resetSummaryView(): void {
 }
 
 function renderDetailView(): void {
+  if (meetingDetailSource?.kind === 'persisted') {
+    renderPersistedMeetingHistoryDetail({
+      title: elements.detailTitle,
+      date: elements.detailDate,
+      historyStatus: elements.detailHistoryStatus,
+      historyStatusMessage: elements.detailHistoryStatusMessage,
+      historyRetryButton: elements.detailHistoryRetryButton,
+      summarySection: elements.detailSummarySection,
+      summaryTitle: elements.detailSummaryTitle,
+      summaryStatus: elements.detailSummaryText,
+      summaryContent: elements.finalSummary,
+      transcriptSection: elements.detailTranscriptSection,
+      transcript: elements.detailTranscript,
+      transcriptEmpty: elements.detailTranscriptEmpty,
+      persistenceNote: elements.detailPersistenceNote,
+    }, meetingHistoryDetailController.state, (value) => formatMeetingDate(Date.parse(value)), formatDuration);
+    return;
+  }
+
+  elements.detailHistoryStatus.hidden = true;
+  elements.detailHistoryRetryButton.hidden = true;
+  elements.detailSummarySection.hidden = false;
+  elements.detailSummaryTitle.textContent = '簡易要約';
+  elements.detailTranscriptSection.hidden = false;
   elements.detailTitle.textContent = meetingTitle();
   const date = meetingStartedAt ?? Date.now();
   elements.detailDate.textContent = `${formatMeetingDate(date)}${meetingEndedAt ? ` ・ ${formatDuration(meetingEndedAt - date)}` : ''}`;
@@ -750,6 +816,11 @@ function renderDetailView(): void {
       onRetry: () => void retryFinalMeetingSummary(),
     });
   }
+  renderCurrentDetailTranscript();
+  elements.detailPersistenceNote.hidden = false;
+  elements.detailPersistenceNote.textContent = isCurrentMeetingPersisted()
+    ? 'この会議はこの端末のブラウザー内に保存されています。サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。'
+    : '会議履歴の端末内保存を確認できませんでした。この画面を閉じる前に内容を確認してください。';
 }
 
 function renderUsage(usage: MeetingUsageSummary): void {
@@ -790,7 +861,7 @@ function renderHomeState(): void {
     status: elements.homeHistoryStatus,
     statusMessage: elements.homeHistoryStatusMessage,
     retryButton: elements.homeHistoryRetryButton,
-  }, meetingHistoryListController.state, currentPageMeetingHistory(), (value) => formatMeetingDate(Date.parse(value)));
+  }, meetingHistoryListController.state, currentPageMeetingHistory(), (value) => formatMeetingDate(Date.parse(value)), openPersistedMeetingDetail);
 }
 
 function currentPageMeetingHistory(): CurrentPageMeetingHistoryItem | null {
@@ -802,8 +873,40 @@ function currentPageMeetingHistory(): CurrentPageMeetingHistoryItem | null {
     occurredAt: snapshot.endedAt,
     utteranceCount: snapshot.sentences.length,
     hasFinalSummary: finalSummaryController.state.status === 'succeeded',
-    openDetail: () => setAppState(transitionAppView(appState, 'open-detail')),
+    openDetail: openCurrentMeetingDetail,
   };
+}
+
+function openCurrentMeetingDetail(): void {
+  meetingHistoryDetailController.clear();
+  meetingDetailSource = { kind: 'current' };
+  setAppState(transitionAppView(appState, 'open-detail'));
+}
+
+function openPersistedMeetingDetail(meetingId: string): void {
+  meetingDetailSource = { kind: 'persisted', meetingId };
+  setAppState(transitionAppView(appState, 'open-persisted-detail'));
+  void meetingHistoryDetailController.open(meetingId);
+}
+
+function returnHomeFromDetail(): void {
+  const returningFromPersistedDetail = meetingDetailSource?.kind === 'persisted';
+  clearPersistedMeetingDetail();
+  setAppState(transitionAppView(appState, 'open-home'));
+  if (returningFromPersistedDetail) elements.historyTitle.focus();
+}
+
+function clearPersistedMeetingDetail(): void {
+  if (meetingDetailSource?.kind !== 'persisted') return;
+  meetingHistoryDetailController.clear();
+  meetingDetailSource = null;
+}
+
+function isCurrentMeetingPersisted(): boolean {
+  if (currentMeetingPersisted) return true;
+  return Boolean(currentMeetingId && meetingHistoryListController.state.records.some(
+    ({ meetingId }) => meetingId === currentMeetingId,
+  ));
 }
 
 function openSettings(): void {
@@ -827,7 +930,7 @@ function closeEndMeetingDialog(): void {
 
 function updateMeetingTitle(): void {
   elements.meetingTitle.textContent = meetingTitle();
-  elements.detailTitle.textContent = meetingTitle();
+  if (meetingDetailSource?.kind !== 'persisted') elements.detailTitle.textContent = meetingTitle();
 }
 
 function meetingTitle(): string {

@@ -54,5 +54,5 @@ export function createMeetingSettingsSnapshot(draft: MeetingSetupDraft, createdA
 
 export function buildMeetingSetupSummary(draft: MeetingSetupDraft): string[] {
   const option = meetingTranscriptionCatalog.find((item) => item.id === draft.transcriptionProvider);
-  return [`${draft.language === 'ja-JP' ? '日本語' : 'English'}で文字起こしします。`, `${option?.label ?? '選択した方法'}を使用します。`, option?.description ?? '処理方法は確認できません。', draft.correctionEnabled ? '確定した発言を読みやすく整えます。' : '整文は使用しません。', draft.liveSummaryEnabled ? '会議中に簡易要約を表示します。' : '会議中の簡易要約は使用しません。', draft.finalSummaryEnabled ? '会議終了後に最終要約とTODOを作成します。' : '最終要約とTODOは作成しません。', '会議履歴は現在のページを開いている間だけ保持されます。', 'ページ再読み込み後は復元されません。'];
+  return [`${draft.language === 'ja-JP' ? '日本語' : 'English'}で文字起こしします。`, `${option?.label ?? '選択した方法'}を使用します。`, option?.description ?? '処理方法は確認できません。', draft.correctionEnabled ? '確定した発言を読みやすく整えます。' : '整文は使用しません。', draft.liveSummaryEnabled ? '会議中に簡易要約を表示します。' : '会議中の簡易要約は使用しません。', draft.finalSummaryEnabled ? '会議終了後に最終要約とTODOを作成します。' : '最終要約とTODOは作成しません。', '会議終了後、履歴はこの端末のブラウザー内へ保存され、ページを閉じて開き直しても確認できます。', 'サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。クラウド保存・チーム共有・アカウント保護には対応していません。'];
 }
