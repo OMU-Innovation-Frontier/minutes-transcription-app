@@ -1,4 +1,8 @@
-import type { MeetingHistoryRepository } from './meetingHistoryRepository';
+import {
+  compareMeetingRecords,
+  isValidMeetingHistoryId,
+  type MeetingHistoryRepository,
+} from './meetingHistoryRepository';
 import { parseMeetingRecord, type MeetingRecord } from './meetingRecord';
 
 export class InMemoryMeetingHistoryRepository implements MeetingHistoryRepository {
@@ -10,7 +14,7 @@ export class InMemoryMeetingHistoryRepository implements MeetingHistoryRepositor
   }
 
   async getById(meetingId: string): Promise<MeetingRecord | null> {
-    if (!isRepositoryId(meetingId)) return null;
+    if (!isValidMeetingHistoryId(meetingId)) return null;
     const record = this.records.get(meetingId);
     return record ? parseMeetingRecord(record) : null;
   }
@@ -22,21 +26,11 @@ export class InMemoryMeetingHistoryRepository implements MeetingHistoryRepositor
   }
 
   async deleteById(meetingId: string): Promise<boolean> {
-    if (!isRepositoryId(meetingId)) return false;
+    if (!isValidMeetingHistoryId(meetingId)) return false;
     return this.records.delete(meetingId);
   }
 
   async clear(): Promise<void> {
     this.records.clear();
   }
-}
-
-function compareMeetingRecords(left: MeetingRecord, right: MeetingRecord): number {
-  return right.updatedAt.localeCompare(left.updatedAt)
-    || right.createdAt.localeCompare(left.createdAt)
-    || left.meetingId.localeCompare(right.meetingId);
-}
-
-function isRepositoryId(value: string): boolean {
-  return Boolean(value) && value.length <= 200 && value.trim() === value;
 }
