@@ -6,6 +6,14 @@ import type { AudioChunkSink, CaptureState, MicrophoneError } from './audio/type
 import { CorrectionCoordinator, CorrectionHttpClient } from './correction/correctionClient';
 import { correctionStatusPresentation } from './correction/transcriptPresentation';
 import { initializeLocalEvaluationRecorder } from './localRecording/localEvaluationRecorder';
+import { IndexedDbMeetingHistoryRepository } from './history/indexedDbMeetingHistoryRepository';
+import {
+  createEndedMeetingSnapshot,
+  MEETING_HISTORY_SAVE_WARNING,
+  MeetingHistoryPersistenceCoordinator,
+  saveSucceededFinalSummary,
+  type EndedMeetingSnapshot,
+} from './history/meetingHistoryPersistence';
 import { IncrementalSummaryCoordinator, SummaryHttpClient, type SummaryStatus } from './summary/summaryClient';
 import { isBrowserSpeechRecognitionSupported } from './transcription/browserProvider';
 import { connectionPresentation } from './transcription/connectionPresentation';
@@ -156,6 +164,7 @@ let meetingStartedAt: number | null = null;
 let meetingEndedAt: number | null = null;
 let meetingHasRecorded = false;
 let meetingSettingsSnapshot: MeetingSettingsSnapshot | null = null;
+let endedMeetingSnapshot: EndedMeetingSnapshot | null = null;
 let meetingSetupDraft: MeetingSetupDraft = createInitialMeetingSetupDraft();
 let reconnectAttempt = 0;
 let reconnectMaxAttempts = 0;
@@ -173,6 +182,11 @@ const correctionClient = new CorrectionHttpClient();
 const transcriptStore = new TranscriptStore({ onChange: handleTranscriptChange });
 const localEvaluationRecorder = initializeLocalEvaluationRecorder();
 const finalSummaryController = new FinalMeetingSummaryController(() => renderDetailView());
+const meetingHistoryRepository = createMeetingHistoryRepository();
+const meetingHistoryPersistence = new MeetingHistoryPersistenceCoordinator(
+  meetingHistoryRepository,
+  renderSummaryWarning,
+);
 
 const recognitionOption = elements.providerSelect.querySelector<HTMLOptionElement>('option[value="browser"]');
 if (recognitionOption && !isBrowserSpeechRecognitionSupported()) {
@@ -236,9 +250,11 @@ window.addEventListener('pagehide', () => {
   window.clearInterval(elapsedTimer);
   summaryCoordinator?.dispose();
   for (const coordinator of correctionCoordinators) coordinator.dispose();
+  meetingHistoryPersistence.dispose();
   localEvaluationRecorder.dispose();
   void capture.stop();
   void provider.abort();
+  void meetingHistoryRepository?.close().catch(() => undefined);
 });
 
 function beginMeeting(): void {
@@ -288,6 +304,8 @@ function resetMeetingData(): void {
   currentSessionId = '';
   latestLiveSummary = null;
   latestSummaryStatus = null;
+  endedMeetingSnapshot = null;
+  meetingHistoryPersistence.reset();
   finalSummaryController.reset();
   meetingHasRecorded = false;
   renderedSentenceCount = 0;
@@ -409,25 +427,54 @@ async function finishMeeting(): Promise<void> {
   sessionTransition = true;
   renderControls();
   meetingEndedAt = Date.now();
+  const settings = meetingSettingsSnapshot;
+  let endedSnapshot: EndedMeetingSnapshot | null = null;
+  if (settings) {
+    try {
+      endedSnapshot = createEndedMeetingSnapshot({
+        meetingId: currentMeetingId,
+        settingsSnapshot: settings,
+        title: meetingTitle(),
+        startedAt: meetingStartedAt,
+        endedAt: meetingEndedAt,
+        sentences: transcriptStore.snapshot().completedSentences,
+      });
+      endedMeetingSnapshot = endedSnapshot;
+    } catch {
+      renderSummaryWarning(MEETING_HISTORY_SAVE_WARNING);
+    }
+  }
   window.clearInterval(elapsedTimer);
   elapsedTimer = undefined;
   appState = transitionAppView(appState, 'end-meeting');
   setAppState(appState);
-  const settings = meetingSettingsSnapshot;
+  if (endedSnapshot) await meetingHistoryPersistence.saveEndedMeeting(endedSnapshot);
+  if (endedSnapshot && (!meetingHistoryPersistence.isActive(endedSnapshot) || endedMeetingSnapshot !== endedSnapshot)) {
+    sessionTransition = false;
+    return;
+  }
   if (settings?.finalSummaryEnabled && !summaryCoordinator) {
     summaryCoordinator = createSummaryCoordinator(currentMeetingId);
   }
-  await finalSummaryController.complete(createFinalSummaryOptions());
+  const finalSummaryState = await finalSummaryController.complete(createFinalSummaryOptions(endedSnapshot));
+  if (endedSnapshot) {
+    await saveSucceededFinalSummary(
+      meetingHistoryPersistence,
+      endedSnapshot,
+      finalSummaryState,
+      latestSummaryStatus?.apiUsed ?? null,
+    );
+  }
   sessionTransition = false;
   renderDetailView();
 }
 
-function createFinalSummaryOptions(): CompleteFinalMeetingSummaryOptions {
-  const settings = meetingSettingsSnapshot;
+function createFinalSummaryOptions(snapshot: EndedMeetingSnapshot | null = endedMeetingSnapshot): CompleteFinalMeetingSummaryOptions {
+  const settings = snapshot?.settingsSnapshot ?? null;
   return {
-    meetingId: currentMeetingId,
+    meetingId: snapshot?.meetingId ?? '',
     settings,
-    sentences: transcriptStore.snapshot().completedSentences,
+    sentences: snapshot?.sentences ?? [],
     provider: () => latestSummaryStatus?.provider ?? null,
     finalize: async (sentences) => {
       if (!summaryCoordinator) return null;
@@ -439,12 +486,21 @@ function createFinalSummaryOptions(): CompleteFinalMeetingSummaryOptions {
 
 async function retryFinalMeetingSummary(): Promise<void> {
   if (!appState.meetingStarted || !appState.meetingEnded) return;
-  const options = createFinalSummaryOptions();
+  const snapshot = endedMeetingSnapshot;
+  const options = createFinalSummaryOptions(snapshot);
   if (!finalSummaryController.retryAvailability(options).available) {
     renderDetailView();
     return;
   }
-  await finalSummaryController.retry(options);
+  const finalSummaryState = await finalSummaryController.retry(options);
+  if (snapshot) {
+    await saveSucceededFinalSummary(
+      meetingHistoryPersistence,
+      snapshot,
+      finalSummaryState,
+      latestSummaryStatus?.apiUsed ?? null,
+    );
+  }
 }
 
 function createSummaryCoordinator(meetingId: string): IncrementalSummaryCoordinator {
@@ -851,6 +907,14 @@ function formatDuration(milliseconds: number): string {
 function envNumber(name: keyof ImportMetaEnv, fallback: number): number {
   const value = Number(import.meta.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function createMeetingHistoryRepository(): IndexedDbMeetingHistoryRepository | null {
+  try {
+    return window.indexedDB ? new IndexedDbMeetingHistoryRepository(window.indexedDB) : null;
+  } catch {
+    return null;
+  }
 }
 
 renderProviderDetails();
