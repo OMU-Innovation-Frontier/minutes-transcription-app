@@ -352,6 +352,8 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .final-summary__metadata dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .final-summary__metadata { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 .final-summary__empty { color: var(--muted); }
+.final-summary__retry-status { margin: 1rem 0; color: var(--muted); overflow-wrap: anywhere; }
+.final-summary__retry-button { min-height: 2.75rem; max-width: 100%; white-space: normal; }
 
 .settings-panel, .confirm-dialog { position: fixed; z-index: 100; inset: 0; }
 .settings-panel__backdrop, .confirm-dialog__backdrop { position: absolute; inset: 0; background: rgb(24 29 25 / 38%); backdrop-filter: blur(3px); }

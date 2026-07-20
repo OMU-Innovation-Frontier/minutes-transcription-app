@@ -33,10 +33,22 @@ export interface CompleteFinalMeetingSummaryOptions {
   finalize: (sentences: readonly CompletedSentence[]) => Promise<FinalMeetingSummary | null>;
 }
 
+export type FinalMeetingSummaryRetryAvailability =
+  | { available: true; message: string }
+  | { available: false; message: string };
+
+export interface FinalMeetingSummaryRenderOptions {
+  retryAvailability?: FinalMeetingSummaryRetryAvailability;
+  retryInProgress?: boolean;
+  onRetry?: () => void;
+}
+
 export class FinalMeetingSummaryController {
   private stateValue: FinalMeetingSummaryState = { status: 'idle' };
   private inFlight: Promise<FinalMeetingSummaryState> | null = null;
   private generation = 0;
+  private meetingId: string | null = null;
+  private retryInProgressValue = false;
 
   constructor(
     private readonly onChange: (state: FinalMeetingSummaryState) => void = () => undefined,
@@ -47,30 +59,75 @@ export class FinalMeetingSummaryController {
     return this.stateValue;
   }
 
+  get retryInProgress(): boolean {
+    return this.retryInProgressValue;
+  }
+
   complete(options: CompleteFinalMeetingSummaryOptions): Promise<FinalMeetingSummaryState> {
-    if (this.stateValue.status === 'succeeded' || this.stateValue.status === 'disabled') {
+    if (this.inFlight) return this.inFlight;
+    if (this.stateValue.status !== 'idle') {
       return Promise.resolve(this.stateValue);
     }
-    if (this.inFlight) return this.inFlight;
+    if (!this.bindMeeting(options.meetingId)) {
+      this.setState({ status: 'failed' });
+      return Promise.resolve(this.stateValue);
+    }
     if (!options.settings?.finalSummaryEnabled) {
       this.setState({ status: 'disabled' });
       return Promise.resolve(this.stateValue);
     }
+
+    return this.run(options);
+  }
+
+  retry(options: CompleteFinalMeetingSummaryOptions): Promise<FinalMeetingSummaryState> {
+    if (this.inFlight) return this.inFlight;
+    if (!this.retryAvailability(options).available) return Promise.resolve(this.stateValue);
+    this.retryInProgressValue = true;
+    return this.run(options);
+  }
+
+  retryAvailability(options: Pick<CompleteFinalMeetingSummaryOptions, 'meetingId' | 'settings' | 'sentences'>): FinalMeetingSummaryRetryAvailability {
+    if (this.stateValue.status === 'processing' || this.inFlight) {
+      return { available: false, message: '再試行中です。' };
+    }
+    if (this.stateValue.status !== 'failed') {
+      return { available: false, message: '現在は再試行できません。' };
+    }
+    if (!options.meetingId.trim() || this.meetingId !== options.meetingId) {
+      return { available: false, message: '対象の会議を確認できないため再試行できません。' };
+    }
+    if (!options.settings) {
+      return { available: false, message: 'この会議には確定済みの設定がないため再試行できません。' };
+    }
+    if (!options.settings.finalSummaryEnabled) {
+      return { available: false, message: 'この会議では最終要約が無効です。' };
+    }
+    if (options.sentences.length === 0) {
+      return { available: false, message: '確定済みの文字起こしがないため再試行できません。' };
+    }
+    return { available: true, message: '文字起こしを保持したまま再試行できます。' };
+  }
+
+  private run(options: CompleteFinalMeetingSummaryOptions): Promise<FinalMeetingSummaryState> {
+    const meetingId = options.meetingId;
 
     this.setState({ status: 'processing' });
     const generation = this.generation;
     const operation = (async () => {
       try {
         const summary = await options.finalize(options.sentences);
-        if (generation !== this.generation) return this.stateValue;
+        if (!this.isCurrent(generation, meetingId)) return this.stateValue;
         if (!summary) {
+          this.finishRun(generation, meetingId);
           this.setState({ status: 'failed' });
           return this.stateValue;
         }
+        this.finishRun(generation, meetingId);
         this.setState({
           status: 'succeeded',
           record: createFinalMeetingSummaryRecord(
-            options.meetingId,
+            meetingId,
             summary,
             this.now().toISOString(),
             typeof options.provider === 'function' ? options.provider() : options.provider,
@@ -78,10 +135,13 @@ export class FinalMeetingSummaryController {
         });
         return this.stateValue;
       } catch {
-        if (generation === this.generation) this.setState({ status: 'failed' });
+        if (this.isCurrent(generation, meetingId)) {
+          this.finishRun(generation, meetingId);
+          this.setState({ status: 'failed' });
+        }
         return this.stateValue;
       } finally {
-        if (generation === this.generation) this.inFlight = null;
+        this.finishRun(generation, meetingId);
       }
     })();
     this.inFlight = operation;
@@ -91,7 +151,25 @@ export class FinalMeetingSummaryController {
   reset(): void {
     this.generation += 1;
     this.inFlight = null;
+    this.meetingId = null;
+    this.retryInProgressValue = false;
     this.setState({ status: 'idle' });
+  }
+
+  private bindMeeting(meetingId: string): boolean {
+    if (!meetingId.trim()) return false;
+    this.meetingId ??= meetingId;
+    return this.meetingId === meetingId;
+  }
+
+  private isCurrent(generation: number, meetingId: string): boolean {
+    return generation === this.generation && meetingId === this.meetingId;
+  }
+
+  private finishRun(generation: number, meetingId: string): void {
+    if (!this.isCurrent(generation, meetingId)) return;
+    this.inFlight = null;
+    this.retryInProgressValue = false;
   }
 
   private setState(state: FinalMeetingSummaryState): void {
@@ -125,9 +203,12 @@ export function renderFinalMeetingSummary(
   statusElement: HTMLElement,
   contentElement: HTMLElement,
   state: FinalMeetingSummaryState,
+  options: FinalMeetingSummaryRenderOptions = {},
 ): void {
   contentElement.replaceChildren();
-  contentElement.hidden = state.status !== 'succeeded';
+  contentElement.hidden = state.status !== 'succeeded'
+    && state.status !== 'failed'
+    && !(state.status === 'processing' && options.retryInProgress);
 
   if (state.status === 'idle') {
     statusElement.textContent = '会議終了後に最終要約の状態を表示します。';
@@ -139,10 +220,19 @@ export function renderFinalMeetingSummary(
   }
   if (state.status === 'processing') {
     statusElement.textContent = '最終要約とTODOを作成しています。';
+    if (options.retryInProgress) contentElement.append(createRetryButton(undefined, true, '再試行中'));
     return;
   }
   if (state.status === 'failed') {
-    statusElement.textContent = '最終要約を作成できませんでした。文字起こしは保持されています。この画面からの再試行にはまだ対応していません。';
+    statusElement.textContent = '最終要約を作成できませんでした。文字起こしは保持されています。';
+    const availability = options.retryAvailability ?? {
+      available: false,
+      message: '再試行に必要な会議情報を確認できません。',
+    };
+    const retryStatus = document.createElement('p');
+    retryStatus.className = 'final-summary__retry-status';
+    retryStatus.textContent = availability.message;
+    contentElement.append(retryStatus, createRetryButton(options.onRetry, !availability.available || !options.onRetry, '最終要約を再試行'));
     return;
   }
 
@@ -164,6 +254,16 @@ export function renderFinalMeetingSummary(
 
   contentElement.append(overviewHeading, overview, todoHeading, todoContent, metadata);
   contentElement.hidden = false;
+}
+
+function createRetryButton(onRetry: (() => void) | undefined, disabled: boolean, label: string): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.className = 'secondary-button final-summary__retry-button';
+  button.type = 'button';
+  button.textContent = label;
+  button.disabled = disabled;
+  if (!disabled && onRetry) button.addEventListener('click', onRetry);
+  return button;
 }
 
 function createTodoList(todos: readonly FinalMeetingTodo[]): HTMLOListElement {

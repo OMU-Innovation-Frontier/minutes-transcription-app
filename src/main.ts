@@ -29,7 +29,11 @@ import { followStateAfterScroll, shouldFollowTranscriptUpdate } from './ui/scrol
 import { createRawSegmentElement, createSentenceElement } from './ui/transcriptView';
 import { buildMeetingSetupSummary, createInitialMeetingSetupDraft, createMeetingSettingsSnapshot, meetingTranscriptionCatalog, type MeetingSettingsSnapshot, type MeetingSetupDraft } from './meetingSetup/meetingSetup';
 import { renderMeetingSettingsSummary } from './meetingSetup/meetingSettingsSummary';
-import { FinalMeetingSummaryController, renderFinalMeetingSummary } from './summary/finalMeetingSummary';
+import {
+  FinalMeetingSummaryController,
+  renderFinalMeetingSummary,
+  type CompleteFinalMeetingSummaryOptions,
+} from './summary/finalMeetingSummary';
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -413,7 +417,14 @@ async function finishMeeting(): Promise<void> {
   if (settings?.finalSummaryEnabled && !summaryCoordinator) {
     summaryCoordinator = createSummaryCoordinator(currentMeetingId);
   }
-  await finalSummaryController.complete({
+  await finalSummaryController.complete(createFinalSummaryOptions());
+  sessionTransition = false;
+  renderDetailView();
+}
+
+function createFinalSummaryOptions(): CompleteFinalMeetingSummaryOptions {
+  const settings = meetingSettingsSnapshot;
+  return {
     meetingId: currentMeetingId,
     settings,
     sentences: transcriptStore.snapshot().completedSentences,
@@ -423,9 +434,17 @@ async function finishMeeting(): Promise<void> {
       if (settings?.liveSummaryEnabled) await summaryCoordinator.flushLive();
       return summaryCoordinator.finalize(sentences);
     },
-  });
-  sessionTransition = false;
-  renderDetailView();
+  };
+}
+
+async function retryFinalMeetingSummary(): Promise<void> {
+  if (!appState.meetingStarted || !appState.meetingEnded) return;
+  const options = createFinalSummaryOptions();
+  if (!finalSummaryController.retryAvailability(options).available) {
+    renderDetailView();
+    return;
+  }
+  await finalSummaryController.retry(options);
 }
 
 function createSummaryCoordinator(meetingId: string): IncrementalSummaryCoordinator {
@@ -642,7 +661,16 @@ function renderDetailView(): void {
     elements.finalSummary.replaceChildren();
     elements.finalSummary.hidden = true;
   } else {
-    renderFinalMeetingSummary(elements.detailSummaryText, elements.finalSummary, finalSummaryController.state);
+    const retryOptions = createFinalSummaryOptions();
+    const retryAvailability = finalSummaryController.retryAvailability({
+      ...retryOptions,
+      meetingId: appState.meetingStarted && appState.meetingEnded ? retryOptions.meetingId : '',
+    });
+    renderFinalMeetingSummary(elements.detailSummaryText, elements.finalSummary, finalSummaryController.state, {
+      retryAvailability,
+      retryInProgress: finalSummaryController.retryInProgress,
+      onRetry: () => void retryFinalMeetingSummary(),
+    });
   }
 }
 

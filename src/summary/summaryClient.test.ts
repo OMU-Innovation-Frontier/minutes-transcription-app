@@ -89,6 +89,48 @@ describe('IncrementalSummaryCoordinator', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it('retries a failed finalization with unique sentences and safe correction selection', async () => {
+    const corrected = sentence('one');
+    corrected.correction = {
+      rawText: corrected.rawText,
+      correctedText: 'corrected one',
+      status: 'completed',
+      sourceSegmentIds: [...corrected.rawSegmentIds],
+      changes: [],
+      uncertainParts: [],
+    };
+    const pending = sentence('two');
+    pending.correction = {
+      rawText: pending.rawText,
+      correctedText: 'must not be used',
+      status: 'pending',
+      sourceSegmentIds: [...pending.rawSegmentIds],
+      changes: [],
+      uncertainParts: [],
+    };
+    const finalize = vi.fn()
+      .mockRejectedValueOnce(new Error('safe test failure'))
+      .mockResolvedValueOnce(finalSummary());
+    const client = {
+      status: async () => ({ enabled: true, provider: 'mock' as const, apiUsed: false, intervalSeconds: 10 }),
+      update: vi.fn(),
+      usage: async (): Promise<MeetingUsageSummary> => ({
+        inputTokens: 0, outputTokens: 0, totalTokens: 0, requestCount: 0, pricingConfigured: true,
+      }),
+      finalize,
+    } as unknown as SummaryHttpClient;
+    const coordinator = new IncrementalSummaryCoordinator(client, 'meeting-1', 2);
+
+    await expect(coordinator.finalize([corrected, corrected, pending])).resolves.toBeNull();
+    await expect(coordinator.finalize([corrected, corrected, pending])).resolves.toEqual(finalSummary());
+
+    expect(finalize).toHaveBeenCalledTimes(2);
+    expect(finalize.mock.calls[1]?.[2]).toEqual([
+      expect.objectContaining({ id: 'one', text: 'corrected one' }),
+      expect.objectContaining({ id: 'two', text: pending.rawText }),
+    ]);
+  });
+
   it('sends only newly completed sentences instead of the full meeting each time', async () => {
     let version = 0;
     const update = vi.fn(async (...args: [string, LiveMeetingSummary | null, SummarySentence[]]) => {
