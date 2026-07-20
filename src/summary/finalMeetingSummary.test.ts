@@ -83,7 +83,51 @@ describe('FinalMeetingSummaryController', () => {
       meetingId: 'meeting-1', settings: settings(false), sentences: [sentence()], provider: 'mock', finalize,
     });
     expect(finalize).not.toHaveBeenCalled();
-    expect(controller.state).toEqual({ status: 'disabled' });
+    expect(controller.state).toEqual({ status: 'disabled', reason: 'meeting_setting' });
+  });
+
+  it('distinguishes a disabled summary provider from a transient failure and does not allow retry', async () => {
+    const controller = new FinalMeetingSummaryController();
+    const options = {
+      meetingId: 'meeting-1', settings: settings(), sentences: [sentence()], provider: 'mock' as const,
+      finalize: vi.fn(async () => ({ status: 'disabled' as const })),
+    };
+
+    await controller.complete(options);
+
+    expect(controller.state).toEqual({ status: 'disabled', reason: 'provider' });
+    expect(controller.retryAvailability(options).available).toBe(false);
+    expect(options.finalize).toHaveBeenCalledOnce();
+  });
+
+  it('preserves a status-unavailable reason so a manual retry can recover', async () => {
+    const controller = new FinalMeetingSummaryController();
+    const options = {
+      meetingId: 'meeting-1', settings: settings(), sentences: [sentence()], provider: 'mock' as const,
+      finalize: vi.fn()
+        .mockResolvedValueOnce({ status: 'failed' as const, reason: 'status_unavailable' as const })
+        .mockResolvedValueOnce({ status: 'succeeded' as const, summary: summary() }),
+    };
+
+    await controller.complete(options);
+    expect(controller.state).toEqual({ status: 'failed', reason: 'status_unavailable' });
+    expect(controller.retryAvailability(options).available).toBe(true);
+
+    await controller.retry(options);
+    expect(controller.state.status).toBe('succeeded');
+    expect(options.finalize).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not call finalize when there is no completed transcript', async () => {
+    const finalize = vi.fn(async () => ({ status: 'succeeded' as const, summary: summary() }));
+    const controller = new FinalMeetingSummaryController();
+
+    await controller.complete({
+      meetingId: 'meeting-1', settings: settings(), sentences: [], provider: 'mock', finalize,
+    });
+
+    expect(finalize).not.toHaveBeenCalled();
+    expect(controller.state).toEqual({ status: 'failed', reason: 'empty_transcript' });
   });
 
   it('uses the fixed snapshot even if a later setup draft enables final summary', async () => {
@@ -136,7 +180,7 @@ describe('FinalMeetingSummaryController', () => {
       finalize: async () => { throw new Error('provider detail'); },
     });
     expect(sentences).toEqual(before);
-    expect(controller.state).toEqual({ status: 'failed' });
+    expect(controller.state).toEqual({ status: 'failed', reason: 'final_api_failed' });
   });
 
   it('retries a failed summary explicitly with the fixed snapshot and retained transcript', async () => {
@@ -171,7 +215,7 @@ describe('FinalMeetingSummaryController', () => {
     await controller.retry({ ...initial, sentences: [], finalize });
 
     expect(finalize).not.toHaveBeenCalled();
-    expect(controller.state).toEqual({ status: 'failed' });
+    expect(controller.state).toEqual({ status: 'failed', reason: 'final_api_failed' });
     expect(controller.retryAvailability({ ...initial, sentences: [] })).toMatchObject({
       available: false,
       message: expect.stringContaining('文字起こし'),
@@ -187,7 +231,7 @@ describe('FinalMeetingSummaryController', () => {
     await controller.complete({ ...initial, finalize });
 
     expect(finalize).not.toHaveBeenCalled();
-    expect(controller.state).toEqual({ status: 'failed' });
+    expect(controller.state).toEqual({ status: 'failed', reason: 'final_api_failed' });
   });
 
   it('shares one in-flight retry and exposes processing until it completes', async () => {
@@ -216,7 +260,7 @@ describe('FinalMeetingSummaryController', () => {
     await controller.retry({ ...initial, finalize: async () => { throw new Error('private provider detail'); } });
 
     expect(sentences).toEqual(before);
-    expect(controller.state).toEqual({ status: 'failed' });
+    expect(controller.state).toEqual({ status: 'failed', reason: 'final_api_failed' });
     expect(controller.retryAvailability(initial).available).toBe(true);
   });
 
@@ -265,7 +309,7 @@ describe('FinalMeetingSummaryController', () => {
     const controller = new FinalMeetingSummaryController();
     await expect(controller.complete({
       meetingId: 'legacy-meeting', settings: null, sentences: [], provider: null, finalize,
-    })).resolves.toEqual({ status: 'disabled' });
+    })).resolves.toEqual({ status: 'disabled', reason: 'meeting_setting' });
     expect(finalize).not.toHaveBeenCalled();
   });
 });
@@ -294,7 +338,7 @@ describe('final meeting summary presentation', () => {
 
   it('shows an enabled retry button only for an eligible failed meeting', () => {
     const onRetry = vi.fn();
-    renderFinalMeetingSummary(status, content, { status: 'failed' }, {
+    renderFinalMeetingSummary(status, content, { status: 'failed', reason: 'final_api_failed' }, {
       retryAvailability: { available: true, message: '文字起こしを保持したまま再試行できます。' },
       onRetry,
     });
@@ -307,12 +351,32 @@ describe('final meeting summary presentation', () => {
   });
 
   it('disables retry when required meeting information is unavailable', () => {
-    renderFinalMeetingSummary(status, content, { status: 'failed' }, {
+    renderFinalMeetingSummary(status, content, { status: 'failed', reason: 'final_api_failed' }, {
       retryAvailability: { available: false, message: '確定済みの文字起こしがないため再試行できません。' },
       onRetry: vi.fn(),
     });
     expect(content.querySelector<HTMLButtonElement>('button')?.disabled).toBe(true);
     expect(content.textContent).toContain('再試行できません');
+  });
+
+  it('shows a safe status-check failure without exposing technical details', () => {
+    renderFinalMeetingSummary(status, content, { status: 'failed', reason: 'status_unavailable' }, {
+      retryAvailability: { available: true, message: '文字起こしを保持したまま再試行できます。' },
+      onRetry: vi.fn(),
+    });
+
+    expect(status.textContent).toContain('要約機能の状態を確認できませんでした');
+    expect(status.textContent).not.toContain('http://');
+    expect(status.textContent).not.toContain('stack');
+    expect(content.querySelector<HTMLButtonElement>('button')?.disabled).toBe(false);
+  });
+
+  it('shows a disabled provider without a retry control', () => {
+    renderFinalMeetingSummary(status, content, { status: 'disabled', reason: 'provider' });
+
+    expect(status.textContent).toContain('要約機能が現在無効です');
+    expect(status.textContent).toContain('文字起こしは保持されています');
+    expect(content.querySelector('button')).toBeNull();
   });
 
   it('shows processing text and a disabled retry control while retry is running', () => {
@@ -367,7 +431,7 @@ describe('final meeting summary presentation', () => {
     await controller.complete({ ...request, finalize: async () => null });
     await controller.retry({ ...request, finalize: async () => { throw new Error('private provider detail'); } });
 
-    expect(controller.state).toEqual({ status: 'failed' });
+    expect(controller.state).toEqual({ status: 'failed', reason: 'final_api_failed' });
     expect(content.querySelector<HTMLButtonElement>('button')?.disabled).toBe(false);
     expect(content.textContent).toContain('再試行できます');
   });
@@ -412,7 +476,7 @@ describe('final meeting summary presentation', () => {
   });
 
   it.each([
-    [{ status: 'disabled' } as const, '最終要約が無効'],
+    [{ status: 'disabled', reason: 'meeting_setting' } as const, '最終要約が無効'],
     [{ status: 'idle' } as const, '会議終了後'],
   ])('renders the %s state without throwing', (state, expected) => {
     expect(() => renderFinalMeetingSummary(status, content, state)).not.toThrow();

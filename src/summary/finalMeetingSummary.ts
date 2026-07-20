@@ -1,7 +1,7 @@
 import type { FinalMeetingSummary } from '../../shared/summary';
 import type { MeetingSettingsSnapshot } from '../meetingSetup/meetingSetup';
 import type { CompletedSentence } from '../transcription/types';
-import type { SummaryStatus } from './summaryClient';
+import type { SummaryFinalizationFailureReason, SummaryFinalizationResult, SummaryStatus } from './summaryClient';
 
 export interface FinalMeetingTodo {
   content: string;
@@ -20,17 +20,22 @@ export interface FinalMeetingSummaryRecord {
 
 export type FinalMeetingSummaryState =
   | { status: 'idle' }
-  | { status: 'disabled' }
+  | { status: 'disabled'; reason: 'meeting_setting' | 'provider' }
   | { status: 'processing' }
   | { status: 'succeeded'; record: FinalMeetingSummaryRecord }
-  | { status: 'failed' };
+  | { status: 'failed'; reason: FinalMeetingSummaryFailureReason };
+
+export type FinalMeetingSummaryFailureReason =
+  | SummaryFinalizationFailureReason
+  | 'empty_transcript'
+  | 'invalid_context';
 
 export interface CompleteFinalMeetingSummaryOptions {
   meetingId: string;
   settings: MeetingSettingsSnapshot | null;
   sentences: readonly CompletedSentence[];
   provider: SummaryStatus['provider'] | null | (() => SummaryStatus['provider'] | null);
-  finalize: (sentences: readonly CompletedSentence[]) => Promise<FinalMeetingSummary | null>;
+  finalize: (sentences: readonly CompletedSentence[]) => Promise<SummaryFinalizationResult | FinalMeetingSummary | null>;
 }
 
 export type FinalMeetingSummaryRetryAvailability =
@@ -69,11 +74,15 @@ export class FinalMeetingSummaryController {
       return Promise.resolve(this.stateValue);
     }
     if (!this.bindMeeting(options.meetingId)) {
-      this.setState({ status: 'failed' });
+      this.setState({ status: 'failed', reason: 'invalid_context' });
       return Promise.resolve(this.stateValue);
     }
     if (!options.settings?.finalSummaryEnabled) {
-      this.setState({ status: 'disabled' });
+      this.setState({ status: 'disabled', reason: 'meeting_setting' });
+      return Promise.resolve(this.stateValue);
+    }
+    if (options.sentences.length === 0) {
+      this.setState({ status: 'failed', reason: 'empty_transcript' });
       return Promise.resolve(this.stateValue);
     }
 
@@ -116,11 +125,16 @@ export class FinalMeetingSummaryController {
     const generation = this.generation;
     const operation = (async () => {
       try {
-        const summary = await options.finalize(options.sentences);
+        const result = normalizeFinalizationResult(await options.finalize(options.sentences));
         if (!this.isCurrent(generation, meetingId)) return this.stateValue;
-        if (!summary) {
+        if (result.status === 'disabled') {
           this.finishRun(generation, meetingId);
-          this.setState({ status: 'failed' });
+          this.setState({ status: 'disabled', reason: 'provider' });
+          return this.stateValue;
+        }
+        if (result.status === 'failed') {
+          this.finishRun(generation, meetingId);
+          this.setState({ status: 'failed', reason: result.reason });
           return this.stateValue;
         }
         this.finishRun(generation, meetingId);
@@ -128,7 +142,7 @@ export class FinalMeetingSummaryController {
           status: 'succeeded',
           record: createFinalMeetingSummaryRecord(
             meetingId,
-            summary,
+            result.summary,
             this.now().toISOString(),
             typeof options.provider === 'function' ? options.provider() : options.provider,
           ),
@@ -137,7 +151,7 @@ export class FinalMeetingSummaryController {
       } catch {
         if (this.isCurrent(generation, meetingId)) {
           this.finishRun(generation, meetingId);
-          this.setState({ status: 'failed' });
+          this.setState({ status: 'failed', reason: 'final_api_failed' });
         }
         return this.stateValue;
       } finally {
@@ -215,7 +229,9 @@ export function renderFinalMeetingSummary(
     return;
   }
   if (state.status === 'disabled') {
-    statusElement.textContent = 'この会議では最終要約が無効です。';
+    statusElement.textContent = state.reason === 'provider'
+      ? '要約機能が現在無効です。文字起こしは保持されています。'
+      : 'この会議では最終要約が無効です。';
     return;
   }
   if (state.status === 'processing') {
@@ -224,7 +240,7 @@ export function renderFinalMeetingSummary(
     return;
   }
   if (state.status === 'failed') {
-    statusElement.textContent = '最終要約を作成できませんでした。文字起こしは保持されています。';
+    statusElement.textContent = failureMessage(state.reason);
     const availability = options.retryAvailability ?? {
       available: false,
       message: '再試行に必要な会議情報を確認できません。',
@@ -254,6 +270,27 @@ export function renderFinalMeetingSummary(
 
   contentElement.append(overviewHeading, overview, todoHeading, todoContent, metadata);
   contentElement.hidden = false;
+}
+
+function failureMessage(reason: FinalMeetingSummaryFailureReason): string {
+  if (reason === 'status_unavailable') {
+    return '要約機能の状態を確認できませんでした。文字起こしは保持されています。';
+  }
+  if (reason === 'empty_transcript') {
+    return '最終要約に使用できる確定済みの文字起こしがありません。';
+  }
+  if (reason === 'invalid_context') {
+    return '対象の会議を確認できないため、最終要約を作成できませんでした。';
+  }
+  return '最終要約を作成できませんでした。文字起こしは保持されています。';
+}
+
+function normalizeFinalizationResult(
+  result: SummaryFinalizationResult | FinalMeetingSummary | null,
+): SummaryFinalizationResult {
+  if (!result) return { status: 'failed', reason: 'final_api_failed' };
+  if ('status' in result) return result;
+  return { status: 'succeeded', summary: result };
 }
 
 function createRetryButton(onRetry: (() => void) | undefined, disabled: boolean, label: string): HTMLButtonElement {

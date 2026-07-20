@@ -157,6 +157,47 @@ describe('transcription server integration', () => {
       keyPoints: [{ evidenceSentenceIds: ['sentence-1'] }],
     });
   });
+
+  it('serves status and a final mock summary for one completed sentence', async () => {
+    const server = createTranscriptionServer({
+      config: testConfig(),
+      summaryConfig: {
+        enabled: true,
+        provider: 'mock',
+        liveReasoningEffort: 'low',
+        finalReasoningEffort: 'medium',
+        intervalSeconds: 10,
+        stopOnBudgetExceeded: true,
+      },
+    });
+    runningServers.push(server);
+    const address = await server.start();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const statusResponse = await fetch(`${baseUrl}/api/summary/status`);
+    expect(statusResponse.status).toBe(200);
+    expect(await statusResponse.json()).toMatchObject({ enabled: true, provider: 'mock', apiUsed: false });
+
+    const finalResponse = await fetch(`${baseUrl}/api/summary/final`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        meetingId: 'meeting-1',
+        liveSummary: null,
+        sentences: [{ id: 'sentence-1', text: 'TODO: テストを確認する', startTime: 0, endTime: 1 }],
+      }),
+    });
+    expect(finalResponse.status).toBe(200);
+    expect(await finalResponse.json()).toMatchObject({
+      overview: expect.any(String),
+      actionItems: [{
+        task: 'テストを確認する',
+        assignee: null,
+        dueDate: null,
+        evidenceSentenceIds: ['sentence-1'],
+      }],
+    });
+  });
 });
 
 function waitForOpen(websocket: WebSocket): Promise<void> {
