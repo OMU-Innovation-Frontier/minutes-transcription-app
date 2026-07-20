@@ -337,11 +337,17 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 
 .detail-header { border-bottom: 1px solid var(--line); }
 .detail-main { max-width: 800px; padding: clamp(3.5rem, 8vh, 6rem) 0 7rem; }
-.detail-main > h1 { margin: 0; font-size: clamp(2.5rem, 7vw, 5rem); line-height: 1.05; letter-spacing: -0.055em; }
+.detail-main > h1 { margin: 0; overflow-wrap: anywhere; font-size: clamp(2.5rem, 7vw, 5rem); line-height: 1.05; letter-spacing: -0.055em; }
 .detail-date { margin: 1rem 0 0; color: var(--muted); }
+.detail-history-status { margin-top: 2rem; padding: 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.detail-history-status p { margin: 0; }
+.detail-history-status button { margin-top: 1rem; }
 .detail-summary, .detail-transcript-section { margin-top: 5rem; padding-top: 2rem; border-top: 1px solid var(--line); }
 .detail-summary p { max-width: 680px; color: #444a43; font-size: 1.15rem; line-height: 1.85; }
 .detail-transcript-section .transcript-list { margin-top: 3rem; }
+.persisted-utterance__original-toggle { margin-top: 0.8rem; padding: 0; border: 0; color: var(--accent); background: transparent; font: inherit; text-decoration: underline; cursor: pointer; }
+.persisted-utterance__original-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.persisted-utterance__original { margin: 0.65rem 0 0; padding: 0.8rem; color: var(--muted); background: var(--surface-soft); white-space: pre-wrap; overflow-wrap: anywhere; }
 .transcript-list--detail .transcript-item { font-size: clamp(1.15rem, 2.6vw, 1.55rem); }
 .persistence-note { margin-top: 5rem; padding: 1rem 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.84rem; line-height: 1.7; }
 .final-summary { line-height: 1.75; }
@@ -349,6 +355,8 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .final-summary__todos { display: grid; gap: 0.8rem; margin: 0; padding: 0; list-style: none; }
 .final-summary__todos > li { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 0.8rem; }
 .final-summary__todos p { margin: 0 0 0.75rem; overflow-wrap: anywhere; }
+.final-summary__section-list { padding-left: 1.25rem; }
+.final-summary__section-list li { margin-top: 0.45rem; overflow-wrap: anywhere; }
 .final-summary__todos dl,
 .final-summary__metadata { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 0.8rem; margin: 0; }
 .final-summary__todos dt,

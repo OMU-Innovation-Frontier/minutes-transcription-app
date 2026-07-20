@@ -40,7 +40,7 @@ export function buildMeetingSettingsSummary(
     providerDescription: provider?.description ?? 'データ処理方法を確認できません。',
     correction: snapshot.correctionEnabled ? '確定した発言を整文します' : '整文は使用しません',
     summary: buildSummaryLabel(snapshot),
-    historyRetention: '現在のページを開いている間だけ保持（再読み込み後は復元されません）',
+    historyRetention: '会議終了後はこの端末のブラウザー内へ保存。ページを閉じて開き直しても確認できますが、サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。クラウド保存・チーム共有・アカウント保護には対応していません',
     createdAt: Number.isNaN(createdAt.getTime()) ? '作成日時を確認できません' : formatDate(createdAt),
     externalProcessing: provider?.externalAcknowledgementRequired
       ? '外部またはブラウザー管理の処理があります'
