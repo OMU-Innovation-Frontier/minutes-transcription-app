@@ -139,6 +139,114 @@ describe('FinalMeetingSummaryController', () => {
     expect(controller.state).toEqual({ status: 'failed' });
   });
 
+  it('retries a failed summary explicitly with the fixed snapshot and retained transcript', async () => {
+    const snapshot = settings();
+    const sentences = [sentence()];
+    const controller = new FinalMeetingSummaryController(undefined, () => new Date(createdAt));
+    await controller.complete({
+      meetingId: 'meeting-1', settings: snapshot, sentences, provider: 'mock', finalize: async () => null,
+    });
+    const laterDraft = { ...createInitialMeetingSetupDraft('mock'), finalSummaryEnabled: false };
+    const retryFinalize = vi.fn(async (received: readonly CompletedSentence[]) => {
+      expect(received).toEqual(sentences);
+      return summary();
+    });
+
+    expect(laterDraft.finalSummaryEnabled).toBe(false);
+    expect(controller.retryAvailability({ meetingId: 'meeting-1', settings: snapshot, sentences }).available).toBe(true);
+    await controller.retry({ meetingId: 'meeting-1', settings: snapshot, sentences, provider: 'mock', finalize: retryFinalize });
+
+    expect(retryFinalize).toHaveBeenCalledOnce();
+    expect(controller.state).toMatchObject({ status: 'succeeded', record: { meetingId: 'meeting-1' } });
+  });
+
+  it('does not retry without the original snapshot, an enabled setting, or a completed transcript', async () => {
+    const controller = new FinalMeetingSummaryController();
+    const initial = { meetingId: 'meeting-1', settings: settings(), sentences: [sentence()], provider: 'mock' as const };
+    await controller.complete({ ...initial, finalize: async () => null });
+    const finalize = vi.fn(async () => summary());
+
+    await controller.retry({ ...initial, settings: null, finalize });
+    await controller.retry({ ...initial, settings: settings(false), finalize });
+    await controller.retry({ ...initial, sentences: [], finalize });
+
+    expect(finalize).not.toHaveBeenCalled();
+    expect(controller.state).toEqual({ status: 'failed' });
+    expect(controller.retryAvailability({ ...initial, sentences: [] })).toMatchObject({
+      available: false,
+      message: expect.stringContaining('文字起こし'),
+    });
+  });
+
+  it('does not treat a repeated completion call as an automatic retry', async () => {
+    const controller = new FinalMeetingSummaryController();
+    const initial = { meetingId: 'meeting-1', settings: settings(), sentences: [sentence()], provider: 'mock' as const };
+    await controller.complete({ ...initial, finalize: async () => null });
+    const finalize = vi.fn(async () => summary());
+
+    await controller.complete({ ...initial, finalize });
+
+    expect(finalize).not.toHaveBeenCalled();
+    expect(controller.state).toEqual({ status: 'failed' });
+  });
+
+  it('shares one in-flight retry and exposes processing until it completes', async () => {
+    const controller = new FinalMeetingSummaryController();
+    const initial = { meetingId: 'meeting-1', settings: settings(), sentences: [sentence()], provider: 'mock' as const };
+    await controller.complete({ ...initial, finalize: async () => null });
+    let resolve!: (value: FinalMeetingSummary | null) => void;
+    const finalize = vi.fn(() => new Promise<FinalMeetingSummary | null>((done) => { resolve = done; }));
+
+    const first = controller.retry({ ...initial, finalize });
+    const second = controller.retry({ ...initial, finalize });
+
+    expect(controller.state).toEqual({ status: 'processing' });
+    expect(finalize).toHaveBeenCalledOnce();
+    resolve(summary());
+    await Promise.all([first, second]);
+    expect(controller.state.status).toBe('succeeded');
+  });
+
+  it('keeps the transcript and allows another explicit retry after retry failure', async () => {
+    const sentences = [sentence()];
+    const before = structuredClone(sentences);
+    const controller = new FinalMeetingSummaryController();
+    const initial = { meetingId: 'meeting-1', settings: settings(), sentences, provider: 'mock' as const };
+    await controller.complete({ ...initial, finalize: async () => null });
+    await controller.retry({ ...initial, finalize: async () => { throw new Error('private provider detail'); } });
+
+    expect(sentences).toEqual(before);
+    expect(controller.state).toEqual({ status: 'failed' });
+    expect(controller.retryAvailability(initial).available).toBe(true);
+  });
+
+  it('ignores retry requests and delayed results for a different meeting', async () => {
+    const controller = new FinalMeetingSummaryController();
+    const meetingOne = { meetingId: 'meeting-1', settings: settings(), sentences: [sentence()], provider: 'mock' as const };
+    await controller.complete({ ...meetingOne, finalize: async () => null });
+    const wrongMeetingFinalize = vi.fn(async () => summary());
+    await controller.retry({ ...meetingOne, meetingId: 'meeting-2', finalize: wrongMeetingFinalize });
+    expect(wrongMeetingFinalize).not.toHaveBeenCalled();
+
+    let resolveOld!: (value: FinalMeetingSummary | null) => void;
+    const oldRetry = controller.retry({
+      ...meetingOne,
+      finalize: () => new Promise<FinalMeetingSummary | null>((done) => { resolveOld = done; }),
+    });
+    controller.reset();
+    await controller.complete({
+      meetingId: 'meeting-2', settings: settings(), sentences: [sentence('sentence-2')], provider: 'mock',
+      finalize: async () => summary({ overview: '新しい会議の概要' }),
+    });
+    resolveOld(summary({ overview: '古い会議の概要' }));
+    await oldRetry;
+
+    expect(controller.state).toMatchObject({
+      status: 'succeeded',
+      record: { meetingId: 'meeting-2', summary: { overview: '新しい会議の概要' } },
+    });
+  });
+
   it('ignores a delayed result after the meeting data is reset', async () => {
     let resolve!: (value: FinalMeetingSummary) => void;
     const controller = new FinalMeetingSummaryController();
@@ -184,6 +292,86 @@ describe('final meeting summary presentation', () => {
     expect(content.querySelector('input, select, textarea, button')).toBeNull();
   });
 
+  it('shows an enabled retry button only for an eligible failed meeting', () => {
+    const onRetry = vi.fn();
+    renderFinalMeetingSummary(status, content, { status: 'failed' }, {
+      retryAvailability: { available: true, message: '文字起こしを保持したまま再試行できます。' },
+      onRetry,
+    });
+    const button = content.querySelector<HTMLButtonElement>('button');
+    expect(status.textContent).toContain('文字起こしは保持されています');
+    expect(content.textContent).toContain('再試行できます');
+    expect(button?.disabled).toBe(false);
+    button?.click();
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('disables retry when required meeting information is unavailable', () => {
+    renderFinalMeetingSummary(status, content, { status: 'failed' }, {
+      retryAvailability: { available: false, message: '確定済みの文字起こしがないため再試行できません。' },
+      onRetry: vi.fn(),
+    });
+    expect(content.querySelector<HTMLButtonElement>('button')?.disabled).toBe(true);
+    expect(content.textContent).toContain('再試行できません');
+  });
+
+  it('shows processing text and a disabled retry control while retry is running', () => {
+    renderFinalMeetingSummary(status, content, { status: 'processing' }, { retryInProgress: true });
+    const button = content.querySelector<HTMLButtonElement>('button');
+    expect(status.textContent).toContain('作成しています');
+    expect(button?.textContent).toBe('再試行中');
+    expect(button?.disabled).toBe(true);
+  });
+
+  it('does not show a retry control during the initial final-summary request', () => {
+    renderFinalMeetingSummary(status, content, { status: 'processing' });
+    expect(status.textContent).toContain('作成しています');
+    expect(content.querySelector('button')).toBeNull();
+    expect(content.hidden).toBe(true);
+  });
+
+  it('replaces the failed retry UI with readonly summary content after retry succeeds', async () => {
+    const snapshot = settings();
+    const sentences = [sentence()];
+    const controller = new FinalMeetingSummaryController((state) => {
+      renderFinalMeetingSummary(status, content, state, {
+        retryAvailability: controller.retryAvailability({ meetingId: 'meeting-1', settings: snapshot, sentences }),
+        onRetry: vi.fn(),
+      });
+    }, () => new Date(createdAt));
+    await controller.complete({
+      meetingId: 'meeting-1', settings: snapshot, sentences, provider: 'mock', finalize: async () => null,
+    });
+    expect(content.querySelector('button')).not.toBeNull();
+
+    await controller.retry({
+      meetingId: 'meeting-1', settings: snapshot, sentences, provider: 'mock', finalize: async () => summary(),
+    });
+
+    expect(status.textContent).toContain('作成しました');
+    expect(content.textContent).toContain('会議の概要');
+    expect(content.querySelector('button')).toBeNull();
+  });
+
+  it('re-enables the retry button after an explicit retry fails again', async () => {
+    const snapshot = settings();
+    const sentences = [sentence()];
+    const controller = new FinalMeetingSummaryController((state) => {
+      renderFinalMeetingSummary(status, content, state, {
+        retryAvailability: controller.retryAvailability({ meetingId: 'meeting-1', settings: snapshot, sentences }),
+        retryInProgress: controller.retryInProgress,
+        onRetry: vi.fn(),
+      });
+    });
+    const request = { meetingId: 'meeting-1', settings: snapshot, sentences, provider: 'mock' as const };
+    await controller.complete({ ...request, finalize: async () => null });
+    await controller.retry({ ...request, finalize: async () => { throw new Error('private provider detail'); } });
+
+    expect(controller.state).toEqual({ status: 'failed' });
+    expect(content.querySelector<HTMLButtonElement>('button')?.disabled).toBe(false);
+    expect(content.textContent).toContain('再試行できます');
+  });
+
   it('shows an explicit empty state when no TODO was detected', () => {
     const record = createFinalMeetingSummaryRecord('meeting-1', summary({ actionItems: [] }), createdAt, 'mock');
     renderFinalMeetingSummary(status, content, { status: 'succeeded', record });
@@ -224,8 +412,6 @@ describe('final meeting summary presentation', () => {
   });
 
   it.each([
-    [{ status: 'processing' } as const, '作成しています'],
-    [{ status: 'failed' } as const, '文字起こしは保持されています'],
     [{ status: 'disabled' } as const, '最終要約が無効'],
     [{ status: 'idle' } as const, '会議終了後'],
   ])('renders the %s state without throwing', (state, expected) => {

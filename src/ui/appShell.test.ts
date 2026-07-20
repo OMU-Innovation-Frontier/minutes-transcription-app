@@ -56,6 +56,14 @@ describe('application shell markup', () => {
     expect(mainSource).toContain("elements.stopButton.addEventListener('click', () => void pauseSession())");
   });
 
+  it('keeps final-summary retry inside the readonly detail summary without adding persistent storage', () => {
+    expect(mainSource).toContain('finalSummaryController.retry(options)');
+    expect(mainSource).toContain('meetingSettingsSnapshot');
+    expect(document.querySelector('#final-summary')).not.toBeNull();
+    expect(document.querySelector('#final-summary input, #final-summary select, #final-summary textarea')).toBeNull();
+    expect(mainSource).not.toContain('localStorage');
+  });
+
   it('keeps developer controls closed by default', () => {
     expect(document.querySelector<HTMLDetailsElement>('#developer-settings')?.open).toBe(false);
   });
