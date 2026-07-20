@@ -56,12 +56,37 @@ describe('application shell markup', () => {
     expect(mainSource).toContain("elements.stopButton.addEventListener('click', () => void pauseSession())");
   });
 
-  it('keeps final-summary retry inside the readonly detail summary without adding persistent storage', () => {
+  it('keeps final-summary retry inside the readonly detail summary', () => {
     expect(mainSource).toContain('finalSummaryController.retry(options)');
-    expect(mainSource).toContain('meetingSettingsSnapshot');
+    expect(mainSource).toContain('endedMeetingSnapshot');
     expect(document.querySelector('#final-summary')).not.toBeNull();
     expect(document.querySelector('#final-summary input, #final-summary select, #final-summary textarea')).toBeNull();
     expect(mainSource).not.toContain('localStorage');
+  });
+
+  it('creates one IndexedDB history repository without startup hydrate or history listing', () => {
+    expect(mainSource.match(/new IndexedDbMeetingHistoryRepository\(window\.indexedDB\)/gu)).toHaveLength(1);
+    expect(mainSource).not.toContain('meetingHistoryRepository.list(');
+    expect(mainSource).not.toContain('meetingHistoryPersistence.hydrate');
+  });
+
+  it('saves the ended snapshot before finalization and retries from the fixed snapshot', () => {
+    const initialSave = mainSource.indexOf('await meetingHistoryPersistence.saveEndedMeeting(endedSnapshot)');
+    const finalization = mainSource.indexOf('await finalSummaryController.complete(createFinalSummaryOptions(endedSnapshot))');
+    const optionsStart = mainSource.indexOf('function createFinalSummaryOptions(');
+    const optionsEnd = mainSource.indexOf('async function retryFinalMeetingSummary', optionsStart);
+    const optionsSource = mainSource.slice(optionsStart, optionsEnd);
+
+    expect(initialSave).toBeGreaterThan(0);
+    expect(finalization).toBeGreaterThan(initialSave);
+    expect(optionsSource).toContain('snapshot?.sentences ?? []');
+    expect(optionsSource).not.toContain('transcriptStore.snapshot()');
+  });
+
+  it('closes history storage on pagehide without clearing saved history', () => {
+    expect(mainSource).toContain('meetingHistoryRepository?.close().catch(() => undefined)');
+    expect(mainSource).not.toContain('meetingHistoryRepository?.clear()');
+    expect(mainSource).not.toContain('meetingHistoryRepository.clear()');
   });
 
   it('keeps developer controls closed by default', () => {
