@@ -80,7 +80,7 @@ function renderRecord(
   formatDate: DateFormatter,
   formatDuration: DurationFormatter,
 ): void {
-  elements.title.textContent = displayTitle(record);
+  elements.title.textContent = meetingHistoryDisplayTitle(record);
   const primaryDate = record.endedAt ?? record.startedAt ?? record.createdAt;
   const durationMilliseconds = record.startedAt && record.endedAt
     ? Date.parse(record.endedAt) - Date.parse(record.startedAt)
@@ -186,7 +186,7 @@ function createSummaryListSection(
   return [heading('h3', title), list];
 }
 
-function displayTitle(record: MeetingRecord): string {
+export function meetingHistoryDisplayTitle(record: MeetingRecord): string {
   const recordTitle = record.title?.trim();
   if (recordTitle) return recordTitle;
   const snapshotTitle = record.settingsSnapshot.title.trim();

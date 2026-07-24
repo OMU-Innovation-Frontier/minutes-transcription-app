@@ -350,6 +350,12 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .persisted-utterance__original { margin: 0.65rem 0 0; padding: 0.8rem; color: var(--muted); background: var(--surface-soft); white-space: pre-wrap; overflow-wrap: anywhere; }
 .transcript-list--detail .transcript-item { font-size: clamp(1.15rem, 2.6vw, 1.55rem); }
 .persistence-note { margin-top: 5rem; padding: 1rem 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.84rem; line-height: 1.7; }
+.persisted-detail-actions { margin-top: 1.5rem; padding: 1.5rem 0; border-top: 2px solid var(--danger); }
+.persisted-detail-actions > p:not(.section-kicker) { max-width: 64ch; color: var(--muted); line-height: 1.7; }
+.persisted-detail-actions .inline-alert { margin-top: 1rem; overflow-wrap: anywhere; }
+.danger-button { min-height: 44px; padding: 0.72rem 0.95rem; border: 2px solid var(--danger); border-radius: 0.62rem; color: #fff; background: var(--danger); font-weight: 750; }
+.danger-button:hover:not(:disabled) { background: #8e2f2a; }
+.danger-button:disabled { cursor: wait; opacity: 0.68; }
 .final-summary { line-height: 1.75; }
 .final-summary h3 { margin: 2rem 0 0.75rem; font-size: 1.05rem; }
 .final-summary__todos { display: grid; gap: 0.8rem; margin: 0; padding: 0; list-style: none; }
@@ -411,9 +417,11 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
 .local-record-meter { display: flex; margin: 1rem 0; align-items: center; gap: 0.75rem; }
 .local-record-meter progress { width: 100%; }
 
-.confirm-dialog { display: grid; place-items: center; padding: 1rem; }
-.confirm-dialog__body { position: relative; width: min(480px, 100%); padding: 2rem; background: var(--surface); box-shadow: var(--shadow); }
+.confirm-dialog { display: grid; place-items: start center; padding: 1rem; overflow-y: auto; }
+.confirm-dialog__body { position: relative; width: min(480px, 100%); margin-block: auto; padding: 2rem; background: var(--surface); box-shadow: var(--shadow); }
 .confirm-dialog__body > p:not(.section-kicker) { color: var(--muted); line-height: 1.75; }
+.confirm-dialog__body strong { overflow-wrap: anywhere; }
+.delete-dialog__warnings { padding-left: 1.25rem; color: var(--muted); line-height: 1.7; }
 .confirm-dialog__actions { display: flex; margin-top: 1.5rem; justify-content: flex-end; gap: 0.75rem; }
 
 @media (max-width: 840px) {

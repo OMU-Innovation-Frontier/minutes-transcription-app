@@ -9,7 +9,18 @@ import { initializeLocalEvaluationRecorder } from './localRecording/localEvaluat
 import { IndexedDbMeetingHistoryRepository } from './history/indexedDbMeetingHistoryRepository';
 import { MeetingHistoryListController } from './history/meetingHistoryListController';
 import { MeetingHistoryDetailController } from './history/meetingHistoryDetailController';
-import { renderPersistedMeetingHistoryDetail } from './history/meetingHistoryDetailView';
+import {
+  meetingHistoryDisplayTitle,
+  renderPersistedMeetingHistoryDetail,
+} from './history/meetingHistoryDetailView';
+import {
+  MeetingHistoryDeleteController,
+  type MeetingHistoryDeleteState,
+} from './history/meetingHistoryDeleteController';
+import {
+  handleMeetingHistoryDeleteDialogKeydown,
+  renderMeetingHistoryDelete,
+} from './history/meetingHistoryDeleteView';
 import {
   renderMeetingHistoryList,
   type CurrentPageMeetingHistoryItem,
@@ -82,6 +93,7 @@ const elements = {
   homeHistoryStatus: requiredElement<HTMLElement>('home-history-status'),
   homeHistoryStatusMessage: requiredElement<HTMLElement>('home-history-status-message'),
   homeHistoryRetryButton: requiredElement<HTMLButtonElement>('home-history-retry-button'),
+  homeHistoryNotification: requiredElement<HTMLElement>('home-history-notification'),
   meetingHistoryList: requiredElement<HTMLOListElement>('meeting-history-list'),
   historyTitle: requiredElement<HTMLElement>('history-title'),
   homeConnectionError: requiredElement<HTMLElement>('home-connection-error'),
@@ -111,6 +123,16 @@ const elements = {
   detailTranscript: requiredElement<HTMLOListElement>('detail-transcript'),
   detailTranscriptEmpty: requiredElement<HTMLElement>('detail-transcript-empty'),
   detailPersistenceNote: requiredElement<HTMLElement>('detail-persistence-note'),
+  persistedDetailActions: requiredElement<HTMLElement>('persisted-detail-actions'),
+  deleteMeetingHistoryButton: requiredElement<HTMLButtonElement>('delete-meeting-history-button'),
+  deleteMeetingHistoryStatus: requiredElement<HTMLElement>('delete-meeting-history-status'),
+  retryDeleteMeetingHistoryButton: requiredElement<HTMLButtonElement>('retry-delete-meeting-history-button'),
+  deleteMeetingHistoryDialog: requiredElement<HTMLElement>('delete-meeting-history-dialog'),
+  deleteDialogTitle: requiredElement<HTMLElement>('delete-dialog-title'),
+  deleteMeetingHistoryTitle: requiredElement<HTMLElement>('delete-meeting-history-title'),
+  deleteMeetingHistoryProgress: requiredElement<HTMLElement>('delete-meeting-history-progress'),
+  cancelDeleteMeetingHistoryButton: requiredElement<HTMLButtonElement>('cancel-delete-meeting-history-button'),
+  confirmDeleteMeetingHistoryButton: requiredElement<HTMLButtonElement>('confirm-delete-meeting-history-button'),
   startButton: requiredElement<HTMLButtonElement>('start-button'),
   stopButton: requiredElement<HTMLButtonElement>('stop-button'),
   reconnectButton: requiredElement<HTMLButtonElement>('reconnect-button'),
@@ -186,6 +208,8 @@ let endedMeetingSnapshot: EndedMeetingSnapshot | null = null;
 type MeetingDetailSource = { kind: 'current' } | { kind: 'persisted'; meetingId: string } | null;
 let meetingDetailSource: MeetingDetailSource = null;
 let currentMeetingPersisted = false;
+let pageUnloading = false;
+let handledDeleteState: MeetingHistoryDeleteState | null = null;
 let meetingSetupDraft: MeetingSetupDraft = createInitialMeetingSetupDraft();
 let reconnectAttempt = 0;
 let reconnectMaxAttempts = 0;
@@ -218,6 +242,10 @@ const meetingHistoryListController = new MeetingHistoryListController(
 const meetingHistoryDetailController = new MeetingHistoryDetailController(
   meetingHistoryRepository,
   renderDetailView,
+);
+const meetingHistoryDeleteController = new MeetingHistoryDeleteController(
+  meetingHistoryRepository,
+  handleMeetingHistoryDeleteChange,
 );
 
 const recognitionOption = elements.providerSelect.querySelector<HTMLOptionElement>('option[value="browser"]');
@@ -252,6 +280,10 @@ elements.homeHistoryRetryButton.addEventListener('click', () => void meetingHist
 elements.meetingHomeButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'open-home')));
 elements.detailHomeButton.addEventListener('click', returnHomeFromDetail);
 elements.detailHistoryRetryButton.addEventListener('click', () => void meetingHistoryDetailController.retry());
+elements.deleteMeetingHistoryButton.addEventListener('click', openDeleteMeetingHistoryDialog);
+elements.cancelDeleteMeetingHistoryButton.addEventListener('click', cancelDeleteMeetingHistory);
+elements.confirmDeleteMeetingHistoryButton.addEventListener('click', () => void meetingHistoryDeleteController.delete());
+elements.retryDeleteMeetingHistoryButton.addEventListener('click', retryDeleteMeetingHistory);
 elements.homeSettingsButton.addEventListener('click', openSettings);
 elements.meetingSettingsButton.addEventListener('click', openSettings);
 elements.settingsCloseButton.addEventListener('click', closeSettings);
@@ -275,15 +307,13 @@ elements.clearTranscriptButton.addEventListener('click', () => {
 elements.transcriptView.addEventListener('change', renderTranscript);
 elements.providerSelect.addEventListener('change', renderProviderDetails);
 elements.languageSelect.addEventListener('change', renderProviderDetails);
-window.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape') return;
-  if (!elements.endMeetingDialog.hidden) closeEndMeetingDialog();
-  else if (!elements.settingsPanel.hidden) closeSettings();
-});
+window.addEventListener('keydown', handleGlobalKeydown);
 window.addEventListener('pagehide', () => {
+  pageUnloading = true;
   window.clearInterval(elapsedTimer);
   meetingHistoryListController.dispose();
   meetingHistoryDetailController.dispose();
+  meetingHistoryDeleteController.dispose();
   summaryCoordinator?.dispose();
   for (const coordinator of correctionCoordinators) coordinator.dispose();
   meetingHistoryPersistence.dispose();
@@ -788,6 +818,7 @@ function renderDetailView(): void {
       transcriptEmpty: elements.detailTranscriptEmpty,
       persistenceNote: elements.detailPersistenceNote,
     }, meetingHistoryDetailController.state, (value) => formatMeetingDate(Date.parse(value)), formatDuration);
+    renderMeetingHistoryDeleteState();
     return;
   }
 
@@ -821,6 +852,7 @@ function renderDetailView(): void {
   elements.detailPersistenceNote.textContent = isCurrentMeetingPersisted()
     ? 'この会議はこの端末のブラウザー内に保存されています。サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。'
     : '会議履歴の端末内保存を確認できませんでした。この画面を閉じる前に内容を確認してください。';
+  renderMeetingHistoryDeleteState();
 }
 
 function renderUsage(usage: MeetingUsageSummary): void {
@@ -878,18 +910,23 @@ function currentPageMeetingHistory(): CurrentPageMeetingHistoryItem | null {
 }
 
 function openCurrentMeetingDetail(): void {
+  if (meetingHistoryDeleteController.state.status === 'deleting') return;
+  meetingHistoryDeleteController.clear();
   meetingHistoryDetailController.clear();
   meetingDetailSource = { kind: 'current' };
   setAppState(transitionAppView(appState, 'open-detail'));
 }
 
 function openPersistedMeetingDetail(meetingId: string): void {
+  if (meetingHistoryDeleteController.state.status === 'deleting') return;
+  meetingHistoryDeleteController.clear();
   meetingDetailSource = { kind: 'persisted', meetingId };
   setAppState(transitionAppView(appState, 'open-persisted-detail'));
   void meetingHistoryDetailController.open(meetingId);
 }
 
 function returnHomeFromDetail(): void {
+  if (meetingHistoryDeleteController.state.status === 'deleting') return;
   const returningFromPersistedDetail = meetingDetailSource?.kind === 'persisted';
   clearPersistedMeetingDetail();
   setAppState(transitionAppView(appState, 'open-home'));
@@ -898,8 +935,112 @@ function returnHomeFromDetail(): void {
 
 function clearPersistedMeetingDetail(): void {
   if (meetingDetailSource?.kind !== 'persisted') return;
+  meetingHistoryDeleteController.clear();
   meetingHistoryDetailController.clear();
   meetingDetailSource = null;
+}
+
+function renderMeetingHistoryDeleteState(): void {
+  renderMeetingHistoryDelete({
+    actions: elements.persistedDetailActions,
+    deleteButton: elements.deleteMeetingHistoryButton,
+    status: elements.deleteMeetingHistoryStatus,
+    retryButton: elements.retryDeleteMeetingHistoryButton,
+    dialog: elements.deleteMeetingHistoryDialog,
+    dialogTargetTitle: elements.deleteMeetingHistoryTitle,
+    dialogProgress: elements.deleteMeetingHistoryProgress,
+    cancelButton: elements.cancelDeleteMeetingHistoryButton,
+    confirmButton: elements.confirmDeleteMeetingHistoryButton,
+  }, meetingHistoryDetailController.state, meetingHistoryDeleteController.state,
+  meetingDetailSource?.kind === 'persisted');
+}
+
+function openDeleteMeetingHistoryDialog(): void {
+  if (!elements.endMeetingDialog.hidden) return;
+  if (meetingDetailSource?.kind !== 'persisted') return;
+  const detailState = meetingHistoryDetailController.state;
+  if (detailState.status !== 'ready' || detailState.record.meetingId !== meetingDetailSource.meetingId) return;
+  hideHistoryNotification();
+  if (!meetingHistoryDeleteController.confirm(
+    detailState.record.meetingId,
+    meetingHistoryDisplayTitle(detailState.record),
+  )) return;
+  elements.cancelDeleteMeetingHistoryButton.focus();
+}
+
+function cancelDeleteMeetingHistory(): void {
+  if (meetingHistoryDeleteController.state.status !== 'confirming') return;
+  meetingHistoryDeleteController.cancel();
+  elements.deleteMeetingHistoryButton.focus();
+}
+
+function retryDeleteMeetingHistory(): void {
+  const operation = meetingHistoryDeleteController.retry();
+  if (meetingHistoryDeleteController.state.status === 'deleting') elements.deleteDialogTitle.focus();
+  void operation;
+}
+
+function handleMeetingHistoryDeleteChange(state: MeetingHistoryDeleteState): void {
+  renderMeetingHistoryDeleteState();
+  if (state.status === 'failed') elements.retryDeleteMeetingHistoryButton.focus();
+  if ((state.status === 'deleted' || state.status === 'not_found') && handledDeleteState !== state) {
+    handledDeleteState = state;
+    void finalizeMeetingHistoryDelete(state);
+  }
+}
+
+async function finalizeMeetingHistoryDelete(
+  state: Extract<MeetingHistoryDeleteState, { status: 'deleted' | 'not_found' }>,
+): Promise<void> {
+  if (pageUnloading) return;
+  if (meetingDetailSource?.kind !== 'persisted' || meetingDetailSource.meetingId !== state.meetingId) return;
+
+  meetingHistoryDetailController.clear();
+  meetingDetailSource = null;
+  setAppState(transitionAppView(appState, 'open-home'));
+  await meetingHistoryListController.refresh();
+  if (pageUnloading) return;
+
+  const refreshFailed = meetingHistoryListController.state.status === 'failed';
+  const message = state.status === 'not_found'
+    ? 'この会議履歴はすでに削除されているか、見つかりませんでした。'
+    : refreshFailed
+      ? '会議履歴を削除しましたが、一覧を更新できませんでした。履歴の再読み込みをお試しください。'
+      : '会議履歴を削除しました。';
+  showHistoryNotification(message, refreshFailed);
+  elements.historyTitle.focus();
+  meetingHistoryDeleteController.clear();
+}
+
+function showHistoryNotification(message: string, danger: boolean): void {
+  elements.homeHistoryNotification.textContent = message;
+  elements.homeHistoryNotification.classList.toggle('inline-alert--danger', danger);
+  elements.homeHistoryNotification.hidden = false;
+  elements.homeHistoryNotification.setAttribute('aria-hidden', 'false');
+}
+
+function hideHistoryNotification(): void {
+  elements.homeHistoryNotification.textContent = '';
+  elements.homeHistoryNotification.classList.remove('inline-alert--danger');
+  elements.homeHistoryNotification.hidden = true;
+  elements.homeHistoryNotification.setAttribute('aria-hidden', 'true');
+}
+
+function handleGlobalKeydown(event: KeyboardEvent): void {
+  if (handleMeetingHistoryDeleteDialogKeydown({
+    actions: elements.persistedDetailActions,
+    deleteButton: elements.deleteMeetingHistoryButton,
+    status: elements.deleteMeetingHistoryStatus,
+    retryButton: elements.retryDeleteMeetingHistoryButton,
+    dialog: elements.deleteMeetingHistoryDialog,
+    dialogTargetTitle: elements.deleteMeetingHistoryTitle,
+    dialogProgress: elements.deleteMeetingHistoryProgress,
+    cancelButton: elements.cancelDeleteMeetingHistoryButton,
+    confirmButton: elements.confirmDeleteMeetingHistoryButton,
+  }, meetingHistoryDeleteController.state, event, cancelDeleteMeetingHistory)) return;
+  if (event.key !== 'Escape') return;
+  if (!elements.endMeetingDialog.hidden) closeEndMeetingDialog();
+  else if (!elements.settingsPanel.hidden) closeSettings();
 }
 
 function isCurrentMeetingPersisted(): boolean {
@@ -919,7 +1060,7 @@ function closeSettings(): void {
 }
 
 function openEndMeetingDialog(): void {
-  if (appState.meetingEnded) return;
+  if (appState.meetingEnded || !elements.deleteMeetingHistoryDialog.hidden) return;
   elements.endMeetingDialog.hidden = false;
   elements.confirmEndMeetingButton.focus();
 }
