@@ -41,6 +41,7 @@
                 <h2 id="history-title" tabindex="-1">これまでの会議</h2>
               </div>
             </div>
+            <p id="home-history-notification" class="inline-alert" role="status" aria-live="polite" tabindex="-1" hidden aria-hidden="true"></p>
             <div id="home-history-status" class="history-status" role="status" aria-live="polite">
               <p id="home-history-status-message">会議履歴を読み込んでいます。</p>
               <button id="home-history-retry-button" class="text-button" type="button" hidden>履歴を再読み込み</button>
@@ -187,6 +188,14 @@
             <ol id="detail-transcript" class="transcript-list transcript-list--detail"></ol>
           </section>
           <p id="detail-persistence-note" class="persistence-note">履歴の保存状態を確認しています。</p>
+          <section id="persisted-detail-actions" class="persisted-detail-actions" aria-labelledby="persisted-detail-actions-title" hidden aria-hidden="true">
+            <p class="section-kicker">DANGER ZONE</p>
+            <h2 id="persisted-detail-actions-title">履歴の管理</h2>
+            <p>この端末のブラウザー内に保存された会議履歴を削除します。この操作は取り消せません。</p>
+            <button id="delete-meeting-history-button" class="danger-button" type="button">この会議履歴を削除</button>
+            <p id="delete-meeting-history-status" class="inline-alert inline-alert--danger" role="status" aria-live="assertive" tabindex="-1" hidden aria-hidden="true"></p>
+            <button id="retry-delete-meeting-history-button" class="secondary-button" type="button" hidden aria-hidden="true">削除を再試行</button>
+          </section>
         </main>
       </section>
 
@@ -258,6 +267,24 @@
           <h2 id="end-dialog-title">この会議を終了しますか？</h2>
           <p>会議終了時に、確定した文字起こしと会議情報をこの端末のブラウザー内へ保存します。サイトデータを削除すると履歴は失われます。</p>
           <div class="confirm-dialog__actions"><button id="cancel-end-meeting-button" class="secondary-button" type="button">会議を続ける</button><button id="confirm-end-meeting-button" class="end-button" type="button">終了する</button></div>
+        </div>
+      </section>
+      <section id="delete-meeting-history-dialog" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description" tabindex="-1" hidden aria-hidden="true">
+        <div class="confirm-dialog__backdrop" aria-hidden="true"></div>
+        <div class="confirm-dialog__body">
+          <p class="section-kicker">DELETE HISTORY</p>
+          <h2 id="delete-dialog-title" tabindex="-1">この会議履歴を削除しますか？</h2>
+          <div id="delete-dialog-description">
+            <p>対象会議: <strong id="delete-meeting-history-title"></strong></p>
+            <ul class="delete-dialog__warnings">
+              <li>保存された文字起こし、最終要約、TODOが削除されます。</li>
+              <li>削除後はこのブラウザーから復元できず、この操作は取り消せません。</li>
+              <li>他の会議履歴と進行中の会議には影響しません。</li>
+              <li>クラウド上のデータを削除する操作ではありません。</li>
+            </ul>
+          </div>
+          <p id="delete-meeting-history-progress" role="status" aria-live="polite" tabindex="-1" hidden aria-hidden="true"></p>
+          <div class="confirm-dialog__actions"><button id="cancel-delete-meeting-history-button" class="secondary-button" type="button">キャンセル</button><button id="confirm-delete-meeting-history-button" class="danger-button" type="button">削除する</button></div>
         </div>
       </section>
     </div>
