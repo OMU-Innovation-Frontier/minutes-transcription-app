@@ -62,6 +62,21 @@ describe('WebSocket protocol', () => {
     }))).toMatchObject({ provider: 'local-whisper', realTimeFactor: 0.5 });
   });
 
+  it('parses explicit Groq Whisper selection', () => {
+    expect(parseClientControlMessage(JSON.stringify({
+      type: 'start', sessionId: 'groq-session', language: 'en',
+      audioFormat: 'audio/pcm;rate=16000;channels=1;format=s16le', provider: 'groq-whisper',
+    }))).toMatchObject({ provider: 'groq-whisper', language: 'en' });
+    expect(parseClientControlMessage(JSON.stringify({
+      type: 'resume', sessionId: 'groq-session', language: 'ja',
+      audioFormat: 'audio/pcm;rate=16000;channels=1;format=s16le', provider: 'groq-whisper',
+      lastAcknowledgedSequence: 3,
+    }))).toMatchObject({ type: 'resume', provider: 'groq-whisper', lastAcknowledgedSequence: 3 });
+    expect(() => parseClientControlMessage(JSON.stringify({
+      type: 'start', sessionId: 'groq-session', language: 'ja', audioFormat: 'audio/pcm', provider: 'unknown',
+    }))).toThrowError(expect.objectContaining({ code: 'invalid_provider' }));
+  });
+
   it('validates heartbeat ping and pong messages', () => {
     expect(parseClientControlMessage(JSON.stringify({ type: 'ping', sessionId: 'session-1' })))
       .toEqual({ type: 'ping', sessionId: 'session-1' });

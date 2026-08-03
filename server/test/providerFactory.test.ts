@@ -6,11 +6,39 @@ import { MockServerSpeechToTextProvider } from '../src/providers/mockProvider';
 import { createServerSpeechToTextProviderRuntime } from '../src/providers/providerFactory';
 import { FakeFunAsrTransport } from './support/fakeFunAsrTransport';
 import { FakeFunAsrWebSocketFactory } from './support/fakeFunAsrWebSocket';
+import { GroqWhisperServerProvider } from '../src/providers/groq/groqWhisperServerProvider';
 
 const TEST_API_KEY = 'test-key-not-real';
 const TEST_WORKSPACE_ID = 'workspace-test';
 
 describe('server STT provider factory', () => {
+  it('creates Groq lazily and performs no request before recognition', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const runtime = createServerSpeechToTextProviderRuntime(loadServerConfig({
+      STT_PROVIDER: 'mock', STT_EXTERNAL_ENABLED: 'true', GROQ_API_KEY: 'placeholder',
+    }), { fetch: fetchMock });
+    try {
+      expect(runtime.create()).toBeInstanceOf(MockServerSpeechToTextProvider);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(runtime.create('groq-whisper')).toBeInstanceOf(GroqWhisperServerProvider);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('rejects a Groq model override without creating a request', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const runtime = createServerSpeechToTextProviderRuntime(loadServerConfig({
+      STT_PROVIDER: 'mock', GROQ_STT_MODEL: 'unsupported-model',
+    }), { fetch: fetchMock });
+    try {
+      expect(() => runtime.create('groq-whisper')).toThrowError(expect.objectContaining({ code: 'groq_model_unsupported' }));
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
+  });
   it('uses Local Whisper for the default provider through the common boundary', async () => {
     const runtime = createServerSpeechToTextProviderRuntime(loadServerConfig({}));
     try {

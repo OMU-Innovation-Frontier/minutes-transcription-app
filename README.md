@@ -1,5 +1,21 @@
 # Minutes Transcription App
 
+## Groq Whisper STT MVP
+
+会議準備画面で`Groq Whisper（無料枠）`を選ぶと、ブラウザーで16 kHz mono PCM16へ変換したマイク音声を既存WebSocket経由でサーバーへ送り、VADで確定した発話だけをGroqへ送信します。モデルは`whisper-large-v3-turbo`、結果は発話終了後のfinal transcriptのみです。
+
+セットアップ:
+
+1. Groqで利用者自身がAPIキーを作成し、ローカルの`.env`へ`GROQ_API_KEY`として設定します。
+2. `.env`で`STT_EXTERNAL_ENABLED=true`を設定します。必要なら`STT_PROVIDER=groq-whisper`と`VITE_TRANSCRIPTION_PROVIDER=groq-whisper`も設定します。
+3. サーバーとフロントエンドを起動し、会議準備画面でGroq Whisperを選択します。
+4. 外部処理の説明を読み、確認チェックを入れてから録音を開始します。
+5. 無料枠とrate limitは変更される可能性があるため、利用前後にGroq Consoleで確認します。
+
+`GROQ_API_KEY`を`VITE_*`へ置かず、`.env`をcommitしないでください。音声は文字起こしのためGroqへ送信されます。APIキー、音声、会議内容、応答本文はログへ出しません。通常テストは注入したFake HTTPのみを使い、外部APIへ接続しません。
+
+MVPでは、利用量カウンターはサーバープロセスのメモリ内だけにあり、再起動で消えます。partial transcript、永続的な利用量ダッシュボード、複数外部STTへの同時送信は対象外です。1発話は最大20秒、同時リクエストは2、待機queueは8、リクエストtimeoutは30秒、停止待機は最大120秒です。
+
 ## Fun-ASR Phase 1a (live-capable transport, not live-validated)
 
 The server contains a Fun-ASR provider behind the existing `SttProvider` boundary. Phase 0 validates protocol events, maps partial/final results, preserves `sentence_id` order, and applies in-memory audio usage limits. Phase 1a adds a server-only `ws` transport with a Singapore workspace-dedicated hostname derived from a validated server-only Workspace ID, a fixed path, bounded frames/backpressure, safe close behavior, and server-side handshake authentication. The existing `dashscope-intl.aliyuncs.com` domain remains documented by Alibaba Cloud, but this implementation does not use it or fall back to it. Tests inject Fake Transport and Fake WebSocket implementations and remain fully offline.

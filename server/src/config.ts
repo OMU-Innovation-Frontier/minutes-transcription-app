@@ -1,4 +1,4 @@
-export type SttProviderId = 'local' | 'mock' | 'fun-asr';
+export type SttProviderId = 'local' | 'mock' | 'fun-asr' | 'groq-whisper';
 
 export class ServerConfigError extends Error {
   constructor(public readonly code: 'stt_provider_unsupported', message: string) {
@@ -51,6 +51,21 @@ export interface ServerConfig {
   localSttDebugAudioDirectory: string;
   localSttDebugAudioMaxFiles: number;
   localSttDebugAudioMaxBytes: number;
+  groqApiKey?: string;
+  groqModel: string;
+  groqRequestTimeoutMs: number;
+  groqStopTimeoutMs: number;
+  groqMaxConcurrency: number;
+  groqMaxQueueSize: number;
+  groqMaxAudioSecondsPerSession: number;
+  groqMaxAudioSecondsPerHour: number;
+  groqMaxAudioSecondsPerDay: number;
+  groqVadSilenceMs: number;
+  groqVadMaxUtteranceMs: number;
+  groqVadMinimumUtteranceMs: number;
+  groqVadPreSpeechMs: number;
+  groqVadRmsThreshold: number;
+  groqVadNoiseFloorMultiplier: number;
 }
 
 export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -130,6 +145,21 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
       1_000_000,
       Number.MAX_SAFE_INTEGER,
     ),
+    groqApiKey: readOptionalString(env.GROQ_API_KEY),
+    groqModel: env.GROQ_STT_MODEL?.trim() || 'whisper-large-v3-turbo',
+    groqRequestTimeoutMs: readInteger(env.GROQ_STT_REQUEST_TIMEOUT_MS, 30_000, 1_000, 120_000),
+    groqStopTimeoutMs: readInteger(env.GROQ_STT_STOP_TIMEOUT_MS, 120_000, 1_000, 300_000),
+    groqMaxConcurrency: readInteger(env.GROQ_STT_MAX_CONCURRENCY, 2, 1, 8),
+    groqMaxQueueSize: readInteger(env.GROQ_STT_MAX_QUEUE_SIZE, 8, 1, 100),
+    groqMaxAudioSecondsPerSession: readInteger(env.GROQ_STT_MAX_AUDIO_SECONDS_PER_SESSION, 3_600, 1, 86_400),
+    groqMaxAudioSecondsPerHour: readInteger(env.GROQ_STT_MAX_AUDIO_SECONDS_PER_HOUR, 6_000, 1, 86_400),
+    groqMaxAudioSecondsPerDay: readInteger(env.GROQ_STT_MAX_AUDIO_SECONDS_PER_DAY, 24_000, 1, 604_800),
+    groqVadSilenceMs: readInteger(env.GROQ_STT_VAD_SILENCE_MS, 1_300, 200, 10_000),
+    groqVadMaxUtteranceMs: readInteger(env.GROQ_STT_VAD_MAX_UTTERANCE_MS, 20_000, 1_000, 120_000),
+    groqVadMinimumUtteranceMs: readInteger(env.GROQ_STT_VAD_MIN_UTTERANCE_MS, 300, 100, 10_000),
+    groqVadPreSpeechMs: readInteger(env.GROQ_STT_VAD_PRE_SPEECH_MS, 300, 20, 5_000),
+    groqVadRmsThreshold: readOptionalNumber(env.GROQ_STT_VAD_RMS_THRESHOLD, 0.0001, 0.5) ?? 0.012,
+    groqVadNoiseFloorMultiplier: readOptionalNumber(env.GROQ_STT_VAD_NOISE_FLOOR_MULTIPLIER, 1, 20) ?? 3,
   };
 }
 
@@ -138,9 +168,10 @@ function readSttProvider(value: string | undefined): SttProviderId {
   if (!configured || configured === 'local' || configured === 'local-whisper') return 'local';
   if (configured === 'mock') return 'mock';
   if (configured === 'fun-asr') return 'fun-asr';
+  if (configured === 'groq-whisper') return 'groq-whisper';
   throw new ServerConfigError(
     'stt_provider_unsupported',
-    `Unsupported STT_PROVIDER value: ${configured}. Allowed values are local, mock, and fun-asr.`,
+    `Unsupported STT_PROVIDER value: ${configured}. Allowed values are local, mock, fun-asr, and groq-whisper.`,
   );
 }
 

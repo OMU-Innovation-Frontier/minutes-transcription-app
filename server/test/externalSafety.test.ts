@@ -24,6 +24,7 @@ describe('external STT safety policy', () => {
     expect(loadServerConfig({ STT_PROVIDER: 'local-whisper' }).provider).toBe('local');
     expect(loadServerConfig({ STT_PROVIDER: 'mock' }).provider).toBe('mock');
     expect(loadServerConfig({ STT_PROVIDER: 'fun-asr' }).provider).toBe('fun-asr');
+    expect(loadServerConfig({ STT_PROVIDER: 'groq-whisper' }).provider).toBe('groq-whisper');
     expect(() => loadServerConfig({ STT_PROVIDER: 'unknown-cloud' })).toThrowError(
       expect.objectContaining({ code: 'stt_provider_unsupported' }),
     );
@@ -52,6 +53,18 @@ describe('external STT safety policy', () => {
     expect(defaults.localSttDebugAudioMaxBytes).toBe(500_000_000);
     expect(loadServerConfig({ LOCAL_STT_SILENCE_MS: '1600' }).localSttSilenceMs).toBe(1_600);
     expect(loadServerConfig({ LOCAL_STT_DEBUG_AUDIO: 'true' }).localSttDebugAudio).toBe(true);
+  });
+
+  it('loads bounded Groq defaults and safely falls back from invalid values', () => {
+    const defaults = loadServerConfig({});
+    expect(defaults).toMatchObject({
+      groqModel: 'whisper-large-v3-turbo', groqRequestTimeoutMs: 30_000,
+      groqStopTimeoutMs: 120_000, groqMaxConcurrency: 2, groqMaxQueueSize: 8,
+      groqMaxAudioSecondsPerSession: 3_600, groqMaxAudioSecondsPerHour: 6_000,
+      groqMaxAudioSecondsPerDay: 24_000, groqVadMaxUtteranceMs: 20_000,
+    });
+    expect(loadServerConfig({ GROQ_STT_MAX_CONCURRENCY: '999', GROQ_STT_REQUEST_TIMEOUT_MS: 'bad' }))
+      .toMatchObject({ groqMaxConcurrency: 2, groqRequestTimeoutMs: 30_000 });
   });
 
   it('accepts only bounded integers for external audio usage limits', () => {

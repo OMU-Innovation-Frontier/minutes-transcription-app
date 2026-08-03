@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
 import { MAX_AUDIO_CHUNK_BYTES, MAX_SESSION_ID_BYTES, type ServerMessage } from '../../shared/protocol.js';
 import { loadServerConfig, type ServerConfig } from './config.js';
-import { createServerSpeechToTextProviderRuntime } from './providers/providerFactory.js';
+import { createServerSpeechToTextProviderRuntime, type ServerProviderRuntimeDependencies } from './providers/providerFactory.js';
 import type { SttProvider } from './providers/types.js';
 import { TranscriptionWebSocketSession } from './session.js';
 import { TranscriptionSessionRegistry } from './sessionRegistry.js';
@@ -23,6 +23,7 @@ export interface TranscriptionServerOptions {
   summaryService?: SummaryService;
   correctionConfig?: CorrectionConfig;
   correctionService?: CorrectionService;
+  providerRuntimeDependencies?: ServerProviderRuntimeDependencies;
 }
 
 export interface RunningTranscriptionServer {
@@ -34,7 +35,8 @@ export interface RunningTranscriptionServer {
 
 export function createTranscriptionServer(options: TranscriptionServerOptions = {}): RunningTranscriptionServer {
   const config = options.config ?? loadServerConfig();
-  const providerRuntime = options.providerFactory ? undefined : createServerSpeechToTextProviderRuntime(config);
+  const providerRuntime = options.providerFactory ? undefined
+    : createServerSpeechToTextProviderRuntime(config, options.providerRuntimeDependencies);
   const providerFactory = options.providerFactory ?? ((serverConfig: ServerConfig, requestedProvider?: import('../../shared/protocol.js').ServerProviderRequest) =>
     providerRuntime?.create(requestedProvider) ?? failMissingProviderRuntime(serverConfig));
   const authorizeUpgrade = options.authorizeUpgrade ?? (() => true);

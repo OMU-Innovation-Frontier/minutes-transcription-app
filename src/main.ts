@@ -358,6 +358,9 @@ function createMeetingFromSetup(): void {
   meetingEndedAt = null;
   elements.meetingTitle.textContent = meetingSettingsSnapshot.title;
   elements.meetingTitleInput.value = meetingSettingsSnapshot.title;
+  elements.providerSelect.value = meetingSettingsSnapshot.transcriptionProvider;
+  elements.languageSelect.value = meetingSettingsSnapshot.language;
+  renderProviderDetails();
   renderMeetingSettingsSummary(elements.meetingSettingsSummary, meetingSettingsSnapshot);
   setAppState(transitionAppView(appState, 'create-meeting'));
 }
@@ -679,9 +682,11 @@ function renderControls(): void {
 function renderProviderDetails(): void {
   const selected = createSpeechToTextProvider(elements.providerSelect.value as SpeechToTextProviderKind);
   elements.providerLabel.textContent = selected.label;
-  elements.localWhisperStats.hidden = selected.id !== 'local-whisper';
+  elements.localWhisperStats.hidden = selected.id !== 'local-whisper' && selected.id !== 'groq-whisper';
   elements.localWhisperLanguage.textContent = elements.languageSelect.value === 'ja-JP' ? '日本語' : 'English';
-  elements.privacyNote.textContent = selected.id === 'local-whisper'
+  elements.privacyNote.textContent = selected.id === 'groq-whisper'
+    ? '音声を文字起こしするためGroqへ送信します。無料枠には利用上限があり、提供条件は変更される場合があります。'
+    : selected.id === 'local-whisper'
     ? '音声はこのPCのローカルサーバーへ送り、Whisper smallで処理します。外部STT APIへは送信しません。'
     : selected.id === 'websocket'
       ? '音声は設定済みのバックエンドへ送信します。接続中の音声は一時的にIndexedDBへ保持します。'

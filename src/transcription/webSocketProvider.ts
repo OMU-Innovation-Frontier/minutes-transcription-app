@@ -28,7 +28,7 @@ interface NetworkEventSource {
 }
 
 export interface WebSocketProviderDependencies {
-  mode?: 'server-default' | 'local-whisper';
+  mode?: 'server-default' | 'local-whisper' | 'groq-whisper';
   url?: string;
   createWebSocket?: (url: string) => WebSocketConnection;
   setTimeout?: typeof window.setTimeout;
@@ -53,7 +53,7 @@ const STOP_TIMEOUT_MS = 3_000;
 const BUFFER_POLL_MS = 25;
 
 export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
-  readonly id: 'websocket' | 'local-whisper';
+  readonly id: 'websocket' | 'local-whisper' | 'groq-whisper';
   readonly label: string;
   readonly isMock = false;
   readonly audioCaptureMode;
@@ -75,7 +75,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
   private readonly heartbeatTimeoutMs: number;
   private readonly maxBufferedAmountBytes: number;
   private readonly stopTimeoutMs: number;
-  private readonly requestedProvider: 'server-default' | 'local-whisper';
+  private readonly requestedProvider: 'server-default' | 'local-whisper' | 'groq-whisper';
   private socket: WebSocketConnection | null = null;
   private callbacks: SpeechToTextCallbacks = {};
   private sessionId = '';
@@ -113,9 +113,10 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
 
   constructor(dependencies: WebSocketProviderDependencies = {}) {
     this.requestedProvider = dependencies.mode ?? 'server-default';
-    this.id = this.requestedProvider === 'local-whisper' ? 'local-whisper' : 'websocket';
-    this.label = this.requestedProvider === 'local-whisper' ? 'Local Whisper small' : 'WebSocketサーバー認識';
-    this.audioCaptureMode = this.requestedProvider === 'local-whisper' ? 'pcm16-16khz' as const : 'media-recorder' as const;
+    this.id = this.requestedProvider === 'server-default' ? 'websocket' : this.requestedProvider;
+    this.label = this.requestedProvider === 'local-whisper' ? 'Local Whisper small'
+      : this.requestedProvider === 'groq-whisper' ? 'Groq Whisper（無料枠）' : 'WebSocketサーバー認識';
+    this.audioCaptureMode = this.requestedProvider === 'server-default' ? 'media-recorder' as const : 'pcm16-16khz' as const;
     this.url = dependencies.url ?? import.meta.env.VITE_TRANSCRIPTION_WEBSOCKET_URL ?? 'ws://localhost:8787/transcription';
     this.createWebSocket = dependencies.createWebSocket ??
       (typeof WebSocket === 'undefined' ? undefined : (url) => new WebSocket(url));
@@ -132,7 +133,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
     this.heartbeatIntervalMs = dependencies.heartbeatIntervalMs ?? envNumber('VITE_WS_HEARTBEAT_INTERVAL_MS', 5_000);
     this.heartbeatTimeoutMs = dependencies.heartbeatTimeoutMs ?? envNumber('VITE_WS_HEARTBEAT_TIMEOUT_MS', 10_000);
     this.maxBufferedAmountBytes = dependencies.maxBufferedAmountBytes ?? envNumber('VITE_WS_MAX_BUFFERED_AMOUNT_BYTES', 1_000_000);
-    this.stopTimeoutMs = dependencies.stopTimeoutMs ?? (this.requestedProvider === 'local-whisper' ? 120_000 : STOP_TIMEOUT_MS);
+    this.stopTimeoutMs = dependencies.stopTimeoutMs ?? (this.requestedProvider === 'server-default' ? STOP_TIMEOUT_MS : 120_000);
     this.queue = dependencies.queue ?? new PendingAudioQueue({
       maxSeconds: envNumber('VITE_AUDIO_BUFFER_MAX_SECONDS', 60),
       maxBytes: envNumber('VITE_AUDIO_BUFFER_MAX_BYTES', 25_000_000),
@@ -295,7 +296,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
         sessionId: this.sessionId,
         language: toWireLanguage(this.language),
         audioFormat: this.audioFormat,
-        ...(this.requestedProvider === 'local-whisper' ? { provider: this.requestedProvider } : {}),
+        ...(this.requestedProvider !== 'server-default' ? { provider: this.requestedProvider } : {}),
       };
       if (resume) {
         this.emitState('resuming');
@@ -426,11 +427,18 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
       return;
     }
     if (message.type === 'error') {
+      const configurationError = message.code === 'api_key_missing' || message.code === 'groq_api_key_missing'
+        || message.code === 'groq_external_disabled' || message.code === 'groq_model_unsupported';
       const error: TranscriptionError = {
-        code: message.code === 'api_key_missing' ? 'configuration' : message.retryable ? 'network' : 'service',
+        code: configurationError ? 'configuration' : message.retryable ? 'network' : 'service',
         message: message.message.slice(0, 300),
       };
       this.debug('server-error', { generation, code: message.code, retryable: message.retryable });
+      if (message.code.startsWith('groq_') && !configurationError) {
+        this.callbacks.onWarning?.(error);
+        this.emitState('degraded');
+        return;
+      }
       if (message.retryable) this.handleConnectionLoss(error, socket, generation);
       else this.fail(error);
       return;
@@ -493,7 +501,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
           if (!this.isCurrent(socket, generation) || !this.ready) return;
           const audio = chunk.data instanceof Blob ? await chunk.data.arrayBuffer() : chunk.data;
           if (!this.isCurrent(socket, generation) || !this.ready) return;
-          const metadata = this.requestedProvider === 'local-whisper'
+          const metadata = this.requestedProvider !== 'server-default'
             ? {
                 capturedAt: chunk.capturedAt,
                 sampleRate: chunk.sampleRate ?? 0,

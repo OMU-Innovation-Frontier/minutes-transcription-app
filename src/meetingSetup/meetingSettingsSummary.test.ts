@@ -63,6 +63,14 @@ describe('meeting settings summary', () => {
     expect(root.querySelector('.meeting-settings-summary__row--external')).toBeNull();
   });
 
+  it('shows Groq as external processing using safe DOM text', () => {
+    const root = document.createElement('section');
+    renderMeetingSettingsSummary(root, createSnapshot({ transcriptionProvider: 'groq-whisper' }));
+    expect(root.textContent).toContain('Groq Whisper（無料枠）');
+    expect(root.querySelector('[data-setting="external-processing"]')?.textContent).toContain('外部処理');
+    expect(root.querySelector('script, iframe')).toBeNull();
+  });
+
   it('keeps displaying the snapshot after draft and recording-state changes', () => {
     const draft: MeetingSetupDraft = {
       ...createInitialMeetingSetupDraft('local-whisper'),

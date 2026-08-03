@@ -8,6 +8,17 @@ import {
 } from './meetingSetup';
 
 describe('meeting setup draft and snapshot', () => {
+  it('requires explicit acknowledgement and describes Groq Whisper precisely', () => {
+    const draft = createInitialMeetingSetupDraft('groq-whisper');
+    const option = meetingTranscriptionCatalog.find((item) => item.id === 'groq-whisper');
+    expect(option).toEqual(expect.objectContaining({
+      label: 'Groq Whisper（無料枠）',
+      description: '音声を文字起こしするためGroqへ送信します。無料枠には利用上限があり、提供条件は変更される場合があります。',
+      audience: 'standard', externalAcknowledgementRequired: true,
+    }));
+    expect(validateMeetingSetupDraft(draft)).toBe('データ処理方法を確認してください。');
+    expect(validateMeetingSetupDraft({ ...draft, externalProcessingAcknowledged: true })).toBeNull();
+  });
   it('rejects an external provider until acknowledgement is checked', () => {
     const draft = { ...createInitialMeetingSetupDraft('browser'), title: 'Review' };
     expect(validateMeetingSetupDraft(draft)).toBeTruthy();

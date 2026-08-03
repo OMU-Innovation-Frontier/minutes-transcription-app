@@ -5,7 +5,7 @@ export const MAX_CONTROL_MESSAGE_BYTES = 16_384;
 export const MAX_SESSION_ID_BYTES = 128;
 
 export type WireLanguage = 'ja' | 'en';
-export type ServerProviderRequest = 'server-default' | 'local-whisper';
+export type ServerProviderRequest = 'server-default' | 'local-whisper' | 'groq-whisper';
 export type PcmEncoding = 'pcm_s16le';
 export type LocalWhisperErrorCode =
   | 'local_stt_disabled'
@@ -346,7 +346,7 @@ export function parseServerMessage(text: string): ServerMessage {
 
 function parseProviderRequest(value: unknown): ServerProviderRequest | undefined {
   if (value === undefined) return undefined;
-  if (value === 'server-default' || value === 'local-whisper') return value;
+  if (value === 'server-default' || value === 'local-whisper' || value === 'groq-whisper') return value;
   throw new ProtocolValidationError('invalid_provider', '音声認識プロバイダー指定が不正です。');
 }
 

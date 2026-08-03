@@ -127,4 +127,4 @@ export interface SpeechToTextProvider {
   reconnect?(): void;
 }
 
-export type SpeechToTextProviderKind = 'browser' | 'mock' | 'websocket' | 'local-whisper';
+export type SpeechToTextProviderKind = 'browser' | 'mock' | 'websocket' | 'local-whisper' | 'groq-whisper';
