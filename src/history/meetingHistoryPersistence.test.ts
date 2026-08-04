@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createMeetingSettingsSnapshot, type MeetingSettingsSnapshot } from '../meetingSetup/meetingSetup';
 import type { FinalMeetingSummaryRecord, FinalMeetingSummaryState } from '../summary/finalMeetingSummary';
-import type { CompletedSentence } from '../transcription/types';
+import type { CompletedSentence, SpeechToTextProviderKind } from '../transcription/types';
 import { InMemoryMeetingHistoryRepository } from './inMemoryMeetingHistoryRepository';
 import type { MeetingHistoryRepository } from './meetingHistoryRepository';
 import type { MeetingRecord } from './meetingRecord';
@@ -14,6 +14,23 @@ import {
 } from './meetingHistoryPersistence';
 
 describe('ended meeting snapshot', () => {
+  it('creates a Groq snapshot without recorded utterances', () => {
+    const snapshot = snapshotFixture({ provider: 'groq-whisper', sentences: [] });
+
+    expect(snapshot.settingsSnapshot.transcriptionProvider).toBe('groq-whisper');
+    expect(snapshot.sentences).toEqual([]);
+  });
+
+  it('creates a Groq snapshot with completed utterances', () => {
+    const snapshot = snapshotFixture({
+      provider: 'groq-whisper',
+      sentences: [sentenceFixture('sentence-groq')],
+    });
+
+    expect(snapshot.settingsSnapshot.transcriptionProvider).toBe('groq-whisper');
+    expect(snapshot.sentences.map(({ id }) => id)).toEqual(['sentence-groq']);
+  });
+
   it('captures identifiers, lifecycle timestamps, the final title, fixed settings, and completed sentences', () => {
     const settings = settingsFixture();
     const snapshot = createEndedMeetingSnapshot({
@@ -71,6 +88,50 @@ describe('ended meeting snapshot', () => {
 });
 
 describe('MeetingHistoryPersistenceCoordinator', () => {
+  it('saves and deduplicates a Groq ended-meeting snapshot', async () => {
+    const repository = new RecordingRepository();
+    const persistence = new MeetingHistoryPersistenceCoordinator(repository);
+    const snapshot = snapshotFixture({ provider: 'groq-whisper' });
+
+    await expect(Promise.all([
+      persistence.saveEndedMeeting(snapshot),
+      persistence.saveEndedMeeting(snapshot),
+    ])).resolves.toEqual([true, true]);
+
+    expect(repository.saveCalls).toHaveLength(1);
+    expect(repository.saveCalls[0]?.settingsSnapshot.transcriptionProvider).toBe('groq-whisper');
+  });
+
+  it.each(['browser', 'mock', 'websocket', 'local-whisper'] as const)(
+    'continues to save an ended meeting from the %s provider',
+    async (provider) => {
+      const repository = new RecordingRepository();
+      const persistence = new MeetingHistoryPersistenceCoordinator(repository);
+
+      await expect(persistence.saveEndedMeeting(snapshotFixture({ provider }))).resolves.toBe(true);
+
+      expect(repository.saveCalls).toHaveLength(1);
+      expect(repository.saveCalls[0]?.settingsSnapshot.transcriptionProvider).toBe(provider);
+    },
+  );
+
+  it('rejects an unknown provider before calling the repository', async () => {
+    const repository = new RecordingRepository();
+    const persistence = new MeetingHistoryPersistenceCoordinator(repository);
+    const validSnapshot = snapshotFixture();
+    const snapshot = {
+      ...validSnapshot,
+      settingsSnapshot: {
+        ...validSnapshot.settingsSnapshot,
+        transcriptionProvider: 'future-provider',
+      } as unknown as MeetingSettingsSnapshot,
+    };
+
+    await expect(persistence.saveEndedMeeting(snapshot)).resolves.toBe(false);
+
+    expect(repository.saveCalls).toHaveLength(0);
+  });
+
   it('saves one initial record with finalSummary null before any summary update', async () => {
     const repository = new RecordingRepository();
     const persistence = new MeetingHistoryPersistenceCoordinator(repository);
@@ -336,17 +397,17 @@ class RecordingRepository implements MeetingHistoryRepository {
   }
 }
 
-function settingsFixture(): MeetingSettingsSnapshot {
+function settingsFixture(provider: SpeechToTextProviderKind = 'mock'): MeetingSettingsSnapshot {
   return {
     ...createMeetingSettingsSnapshot({
       title: '作成時のタイトル',
       language: 'ja-JP',
-      transcriptionProvider: 'mock',
+      transcriptionProvider: provider,
       correctionEnabled: true,
       liveSummaryEnabled: true,
       finalSummaryEnabled: true,
       historyRetention: 'page-session',
-      externalProcessingAcknowledged: false,
+      externalProcessingAcknowledged: true,
     }, '2026-07-20T01:00:00.000Z'),
   };
 }
@@ -378,10 +439,11 @@ function snapshotFixture(overrides: Partial<{
   meetingId: string;
   startedAt: number | null;
   sentences: CompletedSentence[];
+  provider: SpeechToTextProviderKind;
 }> = {}): EndedMeetingSnapshot {
   return createEndedMeetingSnapshot({
     meetingId: overrides.meetingId ?? 'meeting-1',
-    settingsSnapshot: settingsFixture(),
+    settingsSnapshot: settingsFixture(overrides.provider),
     title: '終了時のタイトル',
     startedAt: overrides.startedAt === undefined ? null : overrides.startedAt,
     endedAt: Date.parse('2026-07-20T01:30:00.000Z'),

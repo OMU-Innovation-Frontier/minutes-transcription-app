@@ -3,7 +3,11 @@ import { validateFinalMeetingSummary, type FinalMeetingSummary } from '../../sha
 import type { MeetingSettingsSnapshot } from '../meetingSetup/meetingSetup';
 import type { FinalMeetingSummaryRecord, FinalMeetingTodo } from '../summary/finalMeetingSummary';
 import type { SummaryStatus } from '../summary/summaryClient';
-import type { CompletedSentence, TranscriptLanguage } from '../transcription/types';
+import {
+  isSpeechToTextProviderKind,
+  type CompletedSentence,
+  type TranscriptLanguage,
+} from '../transcription/types';
 
 export const MEETING_RECORD_SCHEMA_VERSION = 1 as const;
 
@@ -69,8 +73,6 @@ const PERSISTED_CORRECTION_STATUSES = new Set<PersistedCorrectionStatus>([
   'fallback',
   'completed',
 ]);
-
-const TRANSCRIPTION_PROVIDERS = new Set(['browser', 'mock', 'websocket', 'local-whisper']);
 
 export class MeetingRecordValidationError extends Error {
   constructor(message = '会議履歴レコードが不正です。') {
@@ -251,9 +253,8 @@ function parseSettingsSnapshot(value: unknown): MeetingSettingsSnapshot {
   const title = requireText(settings.title);
   if (title.length > 80 || title.trim() !== title) throw new MeetingRecordValidationError();
   if (settings.language !== 'ja-JP' && settings.language !== 'en-US') throw new MeetingRecordValidationError();
-  if (typeof settings.transcriptionProvider !== 'string' || !TRANSCRIPTION_PROVIDERS.has(settings.transcriptionProvider)) {
-    throw new MeetingRecordValidationError();
-  }
+  const transcriptionProvider = settings.transcriptionProvider;
+  if (!isSpeechToTextProviderKind(transcriptionProvider)) throw new MeetingRecordValidationError();
   if (typeof settings.correctionEnabled !== 'boolean'
     || typeof settings.liveSummaryEnabled !== 'boolean'
     || typeof settings.finalSummaryEnabled !== 'boolean'
@@ -264,7 +265,7 @@ function parseSettingsSnapshot(value: unknown): MeetingSettingsSnapshot {
     settingsVersion: 1,
     title,
     language: settings.language,
-    transcriptionProvider: settings.transcriptionProvider as MeetingSettingsSnapshot['transcriptionProvider'],
+    transcriptionProvider,
     correctionEnabled: settings.correctionEnabled,
     liveSummaryEnabled: settings.liveSummaryEnabled,
     finalSummaryEnabled: settings.finalSummaryEnabled,

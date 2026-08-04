@@ -3,7 +3,12 @@ import type { TranscriptCorrection } from '../../shared/correction';
 import type { FinalMeetingSummary } from '../../shared/summary';
 import { createMeetingSettingsSnapshot, createInitialMeetingSetupDraft } from '../meetingSetup/meetingSetup';
 import { createFinalMeetingSummaryRecord } from '../summary/finalMeetingSummary';
-import type { CompletedSentence } from '../transcription/types';
+import {
+  isSpeechToTextProviderKind,
+  SPEECH_TO_TEXT_PROVIDER_KINDS,
+  type CompletedSentence,
+  type SpeechToTextProviderKind,
+} from '../transcription/types';
 import {
   createMeetingRecord,
   deserializeMeetingRecord,
@@ -59,10 +64,7 @@ function finalSummary(): FinalMeetingSummary {
 }
 
 function record(overrides: Partial<Parameters<typeof createMeetingRecord>[0]> = {}): MeetingRecord {
-  const settingsSnapshot = createMeetingSettingsSnapshot(
-    { ...createInitialMeetingSetupDraft('mock'), title: 'History test', finalSummaryEnabled: true },
-    createdAt,
-  );
+  const settingsSnapshot = settingsForProvider('mock');
   return createMeetingRecord({
     meetingId: 'meeting-1',
     createdAt,
@@ -75,11 +77,36 @@ function record(overrides: Partial<Parameters<typeof createMeetingRecord>[0]> = 
   });
 }
 
+function settingsForProvider(provider: SpeechToTextProviderKind) {
+  return createMeetingSettingsSnapshot({
+    ...createInitialMeetingSetupDraft(provider),
+    title: 'History test',
+    finalSummaryEnabled: true,
+    externalProcessingAcknowledged: true,
+  }, createdAt);
+}
+
 function editable(value: MeetingRecord): Record<string, unknown> {
   return JSON.parse(serializeMeetingRecord(value)) as Record<string, unknown>;
 }
 
 describe('MeetingRecord model and conversion', () => {
+  it.each(SPEECH_TO_TEXT_PROVIDER_KINDS)('creates a record for the %s provider', (provider) => {
+    const value = record({ settingsSnapshot: settingsForProvider(provider) });
+
+    expect(value.schemaVersion).toBe(1);
+    expect(value.settingsSnapshot).toEqual(settingsForProvider(provider));
+  });
+
+  it('round-trips a Groq provider without changing the settings snapshot', () => {
+    const settingsSnapshot = settingsForProvider('groq-whisper');
+    const restored = deserializeMeetingRecord(serializeMeetingRecord(record({ settingsSnapshot })));
+
+    expect(restored.schemaVersion).toBe(1);
+    expect(restored.settingsSnapshot).toEqual(settingsSnapshot);
+    expect(restored.settingsSnapshot.transcriptionProvider).toBe('groq-whisper');
+  });
+
   it('creates the minimum valid record with the centralized schema version', () => {
     const value = record();
 
@@ -170,6 +197,18 @@ describe('MeetingRecord model and conversion', () => {
 });
 
 describe('MeetingRecord validation', () => {
+  it.each(SPEECH_TO_TEXT_PROVIDER_KINDS)('recognizes %s as a supported provider', (provider) => {
+    expect(isSpeechToTextProviderKind(provider)).toBe(true);
+  });
+
+  it('rejects an unknown provider in both the shared guard and persisted settings', () => {
+    expect(isSpeechToTextProviderKind('future-provider')).toBe(false);
+    const value = editable(record());
+    (value.settingsSnapshot as Record<string, unknown>).transcriptionProvider = 'future-provider';
+
+    expect(() => parseMeetingRecord(value)).toThrow(MeetingRecordValidationError);
+  });
+
   it.each([null, [], 'record'])('rejects non-record input: %j', (value) => {
     expect(() => parseMeetingRecord(value)).toThrow(MeetingRecordValidationError);
   });
