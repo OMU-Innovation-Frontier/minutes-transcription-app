@@ -48,4 +48,13 @@ describe('meeting setup to recording boundary', () => {
     expect(providerStarted).toBe('local-whisper');
     expect(languageStarted).toBe('en-US');
   });
+
+  it('does not allow a Groq meeting snapshot before external processing acknowledgement', () => {
+    const draft = { ...createInitialMeetingSetupDraft('groq-whisper'), title: 'External meeting' };
+    expect(validateMeetingSetupDraft(draft)).toBe('データ処理方法を確認してください。');
+    const acknowledged = { ...draft, externalProcessingAcknowledged: true };
+    const snapshot = createMeetingSettingsSnapshot(acknowledged, '2026-07-19T00:00:00.000Z');
+    expect(snapshot.transcriptionProvider).toBe('groq-whisper');
+    expect(snapshot).not.toHaveProperty('externalProcessingAcknowledged');
+  });
 });

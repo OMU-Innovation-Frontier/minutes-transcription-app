@@ -163,6 +163,19 @@ describe('WebSocketSpeechToTextProvider', () => {
     expect(harness.updates[0]).toMatchObject({ isFinal: true, provider: 'local-whisper', model: 'whisper-small-q5_1', realTimeFactor: 0.5 });
   });
 
+  it('selects Groq Whisper over WebSocket and sends PCM metadata', async () => {
+    const harness = createHarness({ mode: 'groq-whisper' });
+    const started = harness.provider.start({ ...options(harness), audioFormat: 'audio/pcm;rate=16000;channels=1;format=s16le' });
+    const socket = harness.sockets[0]!;
+    socket.open();
+    expect(JSON.parse(socket.sent[0] as string)).toMatchObject({ provider: 'groq-whisper', language: 'ja' });
+    socket.message({ type: 'ready', sessionId: 'session-1' });
+    await started;
+    await harness.provider.acceptChunk(localPcmChunk(0));
+    const frame = decodeAudioFrame(socket.sent.find((value) => value instanceof ArrayBuffer) as ArrayBuffer);
+    expect(frame.metadata).toMatchObject({ sampleRate: 16_000, channels: 1, encoding: 'pcm_s16le' });
+  });
+
   it('sends stop and cleans up after stopped', async () => {
     const harness = createHarness();
     const socket = await connect(harness);
@@ -176,9 +189,9 @@ describe('WebSocketSpeechToTextProvider', () => {
     expect(harness.states.at(-1)).toBe('disconnected');
   });
 
-  it('reconnects on normal stop, replays unacknowledged audio, then sends stop', async () => {
+  it.each(['local-whisper', 'groq-whisper'] as const)('reconnects %s on stop, replays unacknowledged audio, then sends stop', async (mode) => {
     vi.useFakeTimers();
-    const harness = createHarness({ mode: 'local-whisper' });
+    const harness = createHarness({ mode });
     const first = await connect(harness);
     await harness.provider.acceptChunk(localPcmChunk(0));
     first.disconnect();
@@ -187,6 +200,7 @@ describe('WebSocketSpeechToTextProvider', () => {
     await vi.advanceTimersByTimeAsync(500);
     const resumed = harness.sockets[1]!;
     resumed.open();
+    expect(JSON.parse(resumed.sent[0] as string)).toMatchObject({ type: 'resume', provider: mode });
     resumed.message({ type: 'resumed', sessionId: 'session-1', lastReceivedSequence: -1 });
     await vi.waitFor(() => expect(resumed.sent.some((item) => item instanceof ArrayBuffer)).toBe(true));
     const replay = resumed.sent.find((item) => item instanceof ArrayBuffer) as ArrayBuffer;
@@ -268,6 +282,30 @@ describe('WebSocketSpeechToTextProvider', () => {
     expect(secondSocket).not.toBe(firstSocket);
     expect(harness.states).toContain('error');
     expect(harness.states.filter((state) => state === 'ready')).toHaveLength(2);
+  });
+
+  it('finishes Groq stop safely when the server stop wait times out', async () => {
+    vi.useFakeTimers();
+    const harness = createHarness({ mode: 'groq-whisper', stopTimeoutMs: 50 });
+    await connect(harness);
+    const stopped = harness.provider.stop();
+    await vi.advanceTimersByTimeAsync(50);
+    await stopped;
+    expect(harness.errors).toHaveLength(1);
+    expect(harness.states.at(-1)).toBe('disconnected');
+  });
+
+  it('keeps the Groq session alive after one utterance warning so a later result can complete', async () => {
+    const harness = createHarness({ mode: 'groq-whisper' });
+    const socket = await connect(harness);
+    socket.message({ type: 'error', sessionId: 'session-1', code: 'groq_response_invalid',
+      message: '安全なエラー', retryable: false });
+    expect(harness.warnings).toHaveLength(1);
+    expect(harness.states.at(-1)).toBe('degraded');
+    expect(socket.close).not.toHaveBeenCalled();
+    socket.message({ type: 'transcript', sessionId: 'session-1', segmentId: 'later', revision: 0,
+      text: 'later result', isFinal: true, language: 'ja', startTime: 1, provider: 'groq-whisper' });
+    expect(harness.updates.at(-1)).toMatchObject({ text: 'later result', isFinal: true });
   });
 
   it('reports reconnecting without stopping the active recording session', async () => {

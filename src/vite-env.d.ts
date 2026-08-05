@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_TRANSCRIPTION_PROVIDER?: 'browser' | 'mock' | 'websocket' | 'local-whisper';
+  readonly VITE_TRANSCRIPTION_PROVIDER?: 'browser' | 'mock' | 'websocket' | 'local-whisper' | 'groq-whisper';
   readonly VITE_TRANSCRIPTION_WEBSOCKET_URL?: string;
   readonly VITE_SERVER_HTTP_URL?: string;
   readonly VITE_AUDIO_BUFFER_MAX_SECONDS?: string;

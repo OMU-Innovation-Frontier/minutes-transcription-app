@@ -127,4 +127,16 @@ export interface SpeechToTextProvider {
   reconnect?(): void;
 }
 
-export type SpeechToTextProviderKind = 'browser' | 'mock' | 'websocket' | 'local-whisper';
+export const SPEECH_TO_TEXT_PROVIDER_KINDS = [
+  'browser',
+  'mock',
+  'websocket',
+  'local-whisper',
+  'groq-whisper',
+] as const;
+
+export type SpeechToTextProviderKind = typeof SPEECH_TO_TEXT_PROVIDER_KINDS[number];
+
+export function isSpeechToTextProviderKind(value: unknown): value is SpeechToTextProviderKind {
+  return typeof value === 'string' && SPEECH_TO_TEXT_PROVIDER_KINDS.some((provider) => provider === value);
+}

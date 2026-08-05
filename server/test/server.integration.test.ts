@@ -1,6 +1,6 @@
 // @vitest-environment node
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket, { type RawData } from 'ws';
 import { encodeAudioFrame, parseServerMessage } from '../../shared/protocol';
 import { loadServerConfig, type ServerConfig } from '../src/config';
@@ -37,6 +37,41 @@ async function startServer(): Promise<{ server: RunningTranscriptionServer; addr
 }
 
 describe('transcription server integration', () => {
+  it.each(['ja', 'en'] as const)('routes %s PCM through Groq VAD and returns final before stopped using injected HTTP', async (language) => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ text: 'offline integration result' }), {
+      headers: { 'content-type': 'application/json' },
+    }));
+    const server = createTranscriptionServer({
+      config: { ...testConfig(), externalEnabled: true, groqApiKey: 'placeholder' },
+      providerRuntimeDependencies: { fetch: fetchMock },
+    });
+    runningServers.push(server);
+    const address = await server.start();
+    const websocket = new WebSocket(`ws://127.0.0.1:${address.port}/transcription`, { origin: 'http://localhost:5173' });
+    await waitForOpen(websocket);
+    const startup = collectMessages(websocket, 2);
+    websocket.send(JSON.stringify({ type: 'start', sessionId: 'groq-integration', language,
+      audioFormat: 'audio/pcm;rate=16000;channels=1;format=s16le', provider: 'groq-whisper' }));
+    expect((await startup).map(({ type }) => type)).toEqual(['recognition_status', 'ready']);
+
+    const accepted = collectMessages(websocket, 2);
+    const audio = voicedPcm(8_000);
+    websocket.send(encodeAudioFrame('groq-integration', 0, audio.buffer, {
+      capturedAt: 0, sampleRate: 16_000, channels: 1, encoding: 'pcm_s16le', frameCount: 8_000,
+    }));
+    expect((await accepted).map(({ type }) => type)).toEqual(['recognition_status', 'audio_ack']);
+
+    const finalMessages = collectMessages(websocket, 5);
+    websocket.send(JSON.stringify({ type: 'stop', sessionId: 'groq-integration' }));
+    const messages = await finalMessages;
+    expect(messages.map(({ type }) => type)).toEqual([
+      'recognition_status', 'recognition_status', 'transcript', 'recognition_status', 'stopped',
+    ]);
+    expect(messages[2]).toMatchObject({ type: 'transcript', text: 'offline integration result',
+      isFinal: true, provider: 'groq-whisper', model: 'whisper-large-v3-turbo' });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    websocket.close();
+  });
   it('serves the health endpoint without API keys', async () => {
     const apiKey = 'test-key-not-real';
     const workspaceId = 'workspace-test';
@@ -237,4 +272,11 @@ function collectMessages(websocket: WebSocket, count: number): Promise<ReturnTyp
     websocket.on('message', onMessage);
     websocket.once('error', reject);
   });
+}
+
+function voicedPcm(frames: number): Uint8Array {
+  const pcm = new Uint8Array(frames * 2);
+  const view = new DataView(pcm.buffer);
+  for (let index = 0; index < frames; index += 1) view.setInt16(index * 2, index % 2 ? 12_000 : -12_000, true);
+  return pcm;
 }
