@@ -66,7 +66,7 @@
             <fieldset><legend>文字起こし方法</legend><label class="field"><span>方法</span><select id="setup-provider"><option value="local-whisper">Local Whisper</option><option value="groq-whisper">Groq Whisper（無料枠）</option><option value="browser">ブラウザー音声認識</option><option value="mock">Mock（開発者向け）</option><option value="websocket">WebSocket（開発者向け）</option></select></label><p id="setup-provider-description" class="privacy-copy"></p></fieldset>
             <fieldset><legend>会議中に使用する機能</legend><label><input id="setup-correction" type="checkbox" /> 確定した発言を読みやすい文章に整える</label><label><input id="setup-live-summary" type="checkbox" /> 会議中に簡易要約を表示する</label><label><input id="setup-final-summary" type="checkbox" /> 会議終了後に最終要約とTODOを作る</label></fieldset>
             <fieldset><legend>会議履歴</legend><p>会議終了後、履歴はこの端末のブラウザー内へ保存され、ページを閉じて開き直しても確認できます。サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。クラウド保存・チーム共有・アカウント保護には対応していません。</p></fieldset>
-            <fieldset id="setup-external-confirmation" hidden><legend>外部処理の確認</legend><p>この方法では音声処理がアプリだけで完結しない可能性があります。</p><label><input id="setup-external-ack" type="checkbox" /> データの処理方法を確認しました</label></fieldset>
+            <fieldset id="setup-external-confirmation" hidden><legend>外部処理の確認</legend><p id="setup-external-description">この設定ではデータを外部サービスへ送信します。</p><label><input id="setup-external-ack" type="checkbox" /> データの処理方法を確認しました</label></fieldset>
             <section aria-live="polite" class="setup-summary"><h2>この会議の設定</h2><ul id="setup-summary-list"></ul></section>
             <div class="setup-actions"><button id="setup-create-button" class="primary-action" type="submit">この設定で会議を作成</button><button id="setup-cancel-button-secondary" class="secondary-button" type="button">キャンセルしてホームへ戻る</button></div>
           </form>

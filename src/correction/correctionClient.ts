@@ -165,6 +165,7 @@ const DISABLED_STATUS: CorrectionServiceStatus = {
   maxInputChars: 4_000,
   removeFillers: false,
   correctionPolicyVersion: CORRECTION_POLICY_VERSION,
+  policyVersion: CORRECTION_POLICY_VERSION,
   queueLimit: CORRECTION_QUEUE_LIMIT,
   maxAttempts: CORRECTION_MAX_ATTEMPTS,
 };
@@ -613,17 +614,30 @@ function isSafeLabel(value: unknown): value is string {
 }
 
 const SAFE_FAILURE_CODES = new Set([
+  'api_key_missing',
+  'authentication_failed',
   'cancelled',
   'empty_text',
+  'empty_response',
+  'external_disabled',
   'input_too_long',
   'interrupted',
+  'invalid_configuration',
+  'invalid_content_type',
   'invalid_response',
   'output_validation_failed',
+  'permission_denied',
   'protected_token_mismatch',
   'provider_unavailable',
   'queue_full',
+  'rate_limited',
+  'refused',
+  'request_failed',
+  'request_timeout',
+  'response_too_large',
   'stale_result',
   'timeout',
+  'unsupported_model',
   'unknown_safe_failure',
 ]);
 

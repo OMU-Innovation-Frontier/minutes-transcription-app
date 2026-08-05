@@ -115,7 +115,20 @@ LLM_CORRECTION_ENABLED=true
 LLM_CORRECTION_PROVIDER=mock
 ```
 
-Mockは単純な決定論的処理です。実LLMの品質を示すものではありません。クラウドLLMを将来追加して有効化すると、確定文字起こしと短い参考文脈が外部送信対象になります。
+Mockは単純な決定論的処理です。実LLMの品質を示すものではありません。
+
+### Groq LLM整文を使う
+
+Groq整文は、確定した発話だけを`openai/gpt-oss-20b`で保守的に整えます。要約、TODO抽出、質問への回答は行いません。利用時は、確定した文字起こし、直前の発話（最大2件）、設定した用語集がGroqへ送信されます。APIキーは`GROQ_CORRECTION_API_KEY`としてNode.jsサーバーだけに設定し、ブラウザーへ渡しません。
+
+```dotenv
+LLM_CORRECTION_ENABLED=true
+LLM_CORRECTION_PROVIDER=groq
+GROQ_CORRECTION_API_KEY=
+GROQ_CORRECTION_MODEL=openai/gpt-oss-20b
+```
+
+出力にはStrict Structured Outputsを使用し、すべての結果を既存の`validateCorrectionOutput`でも再検証します。検証失敗、通信失敗、timeout、cancel時は原文へ安全に戻り、自動retryは行いません。実会議データを使う前に、会議設定画面で外部送信内容を確認して利用者の同意を得てください。無料枠、利用上限、提供条件は変更される可能性があるため、利用前にGroqの最新の条件とData Controlsを確認してください。
 
 ## 検証コマンド
 

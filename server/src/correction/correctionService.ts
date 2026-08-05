@@ -10,6 +10,8 @@ import {
   type TranscriptCorrection,
 } from '../../../shared/correction.js';
 import type { CorrectionConfig } from './config.js';
+import { GroqCorrectionClient } from './groqCorrectionClient.js';
+import { GroqCorrectionProvider } from './groqCorrectionProvider.js';
 import { MockCorrectionProvider } from './mockCorrectionProvider.js';
 import { CorrectionProviderError, UnavailableCorrectionProvider, type CorrectionProvider } from './provider.js';
 
@@ -31,6 +33,7 @@ export class CorrectionService {
       maxInputChars: this.config.maxInputChars,
       removeFillers: this.config.removeFillers,
       correctionPolicyVersion: this.config.correctionPolicyVersion,
+      policyVersion: this.config.correctionPolicyVersion,
       queueLimit: CORRECTION_QUEUE_LIMIT,
       maxAttempts: CORRECTION_MAX_ATTEMPTS,
     };
@@ -118,11 +121,55 @@ export class CorrectionService {
   }
 }
 
-export function createCorrectionService(config: CorrectionConfig): CorrectionService {
-  const provider: CorrectionProvider = config.provider === 'mock'
-    ? new MockCorrectionProvider()
-    : new UnavailableCorrectionProvider(config.provider);
-  return new CorrectionService(config, provider);
+export interface CreateCorrectionServiceOptions {
+  fetch?: typeof fetch;
+}
+
+export function createCorrectionService(
+  config: CorrectionConfig,
+  options: CreateCorrectionServiceOptions = {},
+): CorrectionService {
+  if (config.provider === 'mock') {
+    const enabled = config.enabled && config.configurationError === undefined;
+    return new CorrectionService({ ...config, enabled }, new MockCorrectionProvider());
+  }
+  if (config.provider === 'groq') {
+    const model = config.groqModel === 'openai/gpt-oss-20b' ? config.groqModel : 'unavailable';
+    if (!config.enabled) {
+      return new CorrectionService(
+        { ...config, enabled: false },
+        new UnavailableCorrectionProvider('groq', 'external_disabled', model, true),
+      );
+    }
+    if (config.configurationError) {
+      return new CorrectionService(
+        { ...config, enabled: false },
+        new UnavailableCorrectionProvider('groq', config.configurationError, model, true),
+      );
+    }
+    if (!config.groqApiKey) {
+      return new CorrectionService(
+        { ...config, enabled: false },
+        new UnavailableCorrectionProvider('groq', 'api_key_missing', model, true),
+      );
+    }
+    const client = new GroqCorrectionClient({
+      apiKey: config.groqApiKey,
+      model: config.groqModel,
+      timeoutMs: config.timeoutMs,
+      maxResponseBytes: config.groqMaxResponseBytes,
+      maxOutputTokens: config.groqMaxOutputTokens,
+      reasoningEffort: config.groqReasoningEffort,
+      fetch: options.fetch,
+    });
+    return new CorrectionService(config, new GroqCorrectionProvider(client, {
+      maxOutputRatio: config.maxOutputRatio,
+    }));
+  }
+  return new CorrectionService(
+    { ...config, enabled: false },
+    new UnavailableCorrectionProvider(config.provider, 'provider_unavailable', 'unavailable', true),
+  );
 }
 
 export class CorrectionServiceError extends Error {
@@ -138,7 +185,7 @@ async function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, ti
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
       controller.abort();
-      reject(new CorrectionProviderError('timeout', '整文処理がタイムアウトしました。'));
+      reject(new CorrectionProviderError('request_timeout', '整文処理がタイムアウトしました。'));
     }, timeoutMs);
   });
   try {
@@ -159,7 +206,13 @@ function errorCode(error: unknown): string {
     return 'output_validation_failed';
   }
   if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
-    const allowed = new Set(['timeout', 'provider_unavailable', 'invalid_response', 'input_too_long', 'output_validation_failed', 'protected_token_mismatch', 'cancelled', 'unknown_safe_failure']);
+    const allowed = new Set([
+      'external_disabled', 'api_key_missing', 'unsupported_model', 'invalid_configuration',
+      'request_timeout', 'cancelled', 'rate_limited', 'authentication_failed', 'permission_denied',
+      'request_failed', 'invalid_content_type', 'response_too_large', 'invalid_response',
+      'empty_response', 'refused', 'output_validation_failed', 'provider_unavailable',
+      'input_too_long', 'protected_token_mismatch', 'unknown_safe_failure',
+    ]);
     if (allowed.has(error.code)) return error.code;
   }
   if (error instanceof Error && error.name === 'AbortError') return 'cancelled';

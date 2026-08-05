@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildExternalProcessingDisclosure,
   buildMeetingSetupSummary,
   createInitialMeetingSetupDraft,
   createMeetingSettingsSnapshot,
   meetingTranscriptionCatalog,
+  requiresExternalProcessingAcknowledgement,
   validateMeetingSetupDraft,
 } from './meetingSetup';
 
@@ -29,6 +31,36 @@ describe('meeting setup draft and snapshot', () => {
     for (const provider of ['local-whisper', 'mock'] as const) {
       expect(validateMeetingSetupDraft({ ...createInitialMeetingSetupDraft(provider), title: 'Offline' })).toBeNull();
     }
+  });
+
+  it('requires acknowledgement for enabled external correction even with Local Whisper', () => {
+    const draft = { ...createInitialMeetingSetupDraft('local-whisper'), correctionEnabled: true };
+    const requirements = { correctionStatusKnown: true, correctionExternalTransmission: true };
+    expect(requiresExternalProcessingAcknowledgement(draft, requirements)).toBe(true);
+    expect(validateMeetingSetupDraft(draft, requirements)).toBe('データ処理方法を確認してください。');
+    expect(validateMeetingSetupDraft({ ...draft, externalProcessingAcknowledged: true }, requirements)).toBeNull();
+    expect(buildExternalProcessingDisclosure(draft, requirements)).toBe('確定した文字起こし、直前の発話、設定した用語集を整文のためGroqへ送信します。');
+  });
+
+  it('describes both audio and text transmission when Groq Whisper and Groq correction are enabled', () => {
+    const draft = { ...createInitialMeetingSetupDraft('groq-whisper'), correctionEnabled: true };
+    const requirements = { correctionStatusKnown: true, correctionExternalTransmission: true };
+    const disclosure = buildExternalProcessingDisclosure(draft, requirements);
+    expect(disclosure).toContain('音声を文字起こしするためGroqへ送信します。');
+    expect(disclosure).toContain('確定した文字起こし、直前の発話、設定した用語集を整文のためGroqへ送信します。');
+    expect(buildMeetingSetupSummary(draft, requirements).join('\n')).toContain('用語集');
+  });
+
+  it('does not require correction consent while correction is disabled or local', () => {
+    const local = createInitialMeetingSetupDraft('local-whisper');
+    expect(requiresExternalProcessingAcknowledgement(local, { correctionStatusKnown: true, correctionExternalTransmission: true })).toBe(false);
+    expect(requiresExternalProcessingAcknowledgement({ ...local, correctionEnabled: true }, { correctionStatusKnown: true, correctionExternalTransmission: false })).toBe(false);
+  });
+
+  it('blocks correction until the server transmission status is known', () => {
+    const draft = { ...createInitialMeetingSetupDraft('local-whisper'), correctionEnabled: true };
+    expect(validateMeetingSetupDraft(draft, { correctionStatusKnown: false, correctionExternalTransmission: false }))
+      .toBe('整文のデータ処理方法を確認できません。');
   });
 
   it('validates title length and language', () => {
