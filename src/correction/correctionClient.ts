@@ -456,8 +456,8 @@ function validateResponse(value: unknown, request: CorrectionRequest): Transcrip
     || record.revision !== request.revision
     || record.attemptCount !== request.attemptCount
     || record.policyVersion !== input.correctionPolicyVersion
-    || !isSafeLabel(record.provider)
-    || !isSafeLabel(record.model)) {
+    || !isSafeProviderLabel(record.provider)
+    || !isSafeModelLabel(record.model)) {
     throw new Error('整文レスポンスの原文参照が一致しません。');
   }
   if (record.status === 'succeeded' || record.status === 'completed') {
@@ -609,8 +609,14 @@ function isTerminalStatus(status: TranscriptCorrection['status'] | undefined): b
   return status === 'succeeded' || status === 'completed' || status === 'disabled' || status === 'skipped';
 }
 
-function isSafeLabel(value: unknown): value is string {
+function isSafeProviderLabel(value: unknown): value is string {
   return typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/u.test(value);
+}
+
+function isSafeModelLabel(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length <= 128
+    && /^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/u.test(value);
 }
 
 const SAFE_FAILURE_CODES = new Set([
