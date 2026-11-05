@@ -60,7 +60,8 @@ describe('summary providers and budgets', () => {
       decisions: [], actionItems: [], openQuestions: [],
     };
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-      output_text: JSON.stringify(responseSummary),
+      status: 'completed',
+      output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify(responseSummary) }] }],
       usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30 },
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const provider = new OpenAISummaryProvider({

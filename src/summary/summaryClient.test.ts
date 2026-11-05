@@ -21,6 +21,10 @@ function finalSummary(): FinalMeetingSummary {
 }
 
 describe('SummaryHttpClient', () => {
+  it('rejects a status that hides external processing behind apiUsed=false', async () => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ enabled: true, provider: 'openai', apiUsed: false, intervalSeconds: 10 })));
+    await expect(new SummaryHttpClient('http://127.0.0.1:8787', request as typeof fetch).status()).rejects.toThrow('要約機能の状態');
+  });
   it('keeps the Window receiver for default and explicitly injected window.fetch calls', async () => {
     const originalFetch = Object.getOwnPropertyDescriptor(window, 'fetch');
     const request = vi.fn(function (this: Window, _input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -379,12 +383,26 @@ describe('IncrementalSummaryCoordinator', () => {
       usage: vi.fn(),
       finalize: vi.fn(),
     } as unknown as SummaryHttpClient;
-    const coordinator = new IncrementalSummaryCoordinator(client, 'meeting-1', 1, { onError });
+    const coordinator = new IncrementalSummaryCoordinator(client, 'meeting-1', 1, { onError }, true);
     await coordinator.initialize();
     expect(() => coordinator.add([sentence('one')])).not.toThrow();
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(expect.objectContaining({
       message: 'ライブ要約を更新できませんでした。',
     })));
+    coordinator.dispose();
+  });
+
+  it('blocks external summary calls if setup did not authorize text transmission', async () => {
+    const client = {
+      status: async () => ({ enabled: true, provider: 'openai' as const, apiUsed: true, intervalSeconds: 10 }),
+      finalize: vi.fn(), update: vi.fn(),
+    } as unknown as SummaryHttpClient;
+    const coordinator = new IncrementalSummaryCoordinator(client, 'meeting-1', 1, {}, false);
+    expect(await coordinator.finalize([sentence('one')])).toEqual({ status: 'failed', reason: 'status_unavailable' });
+    coordinator.add([sentence('one')]);
+    await coordinator.flushLive();
+    expect(client.finalize).not.toHaveBeenCalled();
+    expect(client.update).not.toHaveBeenCalled();
     coordinator.dispose();
   });
 });

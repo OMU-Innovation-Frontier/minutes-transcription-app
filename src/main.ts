@@ -230,6 +230,9 @@ let correctionServiceStatus: CorrectionServiceStatus | null = null;
 const correctionCoordinators: CorrectionCoordinator[] = [];
 let latestLiveSummary: LiveMeetingSummary | null = null;
 let latestSummaryStatus: SummaryStatus | null = null;
+let setupSummaryStatus: SummaryStatus | null = null;
+let setupSummaryGeneration = 0;
+let meetingSummaryExternalAllowed = false;
 let autoFollowTranscript = true;
 let renderedSentenceCount = 0;
 let renderedInterimText = '';
@@ -286,7 +289,10 @@ elements.newMeetingButton.addEventListener('click', beginMeeting);
 elements.setupCancelButton.addEventListener('click', cancelMeetingSetup);
 elements.setupCancelSecondary.addEventListener('click', cancelMeetingSetup);
 elements.setupForm.addEventListener('submit', (event) => { event.preventDefault(); createMeetingFromSetup(); });
-for (const input of [elements.setupTitle, elements.setupLanguage, elements.setupProvider, elements.setupCorrection, elements.setupLiveSummary, elements.setupFinalSummary, elements.setupExternalAck]) input.addEventListener('input', renderMeetingSetup);
+for (const input of [elements.setupTitle, elements.setupLanguage, elements.setupProvider, elements.setupCorrection, elements.setupLiveSummary, elements.setupFinalSummary, elements.setupExternalAck]) input.addEventListener('input', () => {
+  if ([elements.setupProvider, elements.setupCorrection, elements.setupLiveSummary, elements.setupFinalSummary].some((control) => control === input)) elements.setupExternalAck.checked = false;
+  renderMeetingSetup();
+});
 elements.resumeMeetingButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'resume-meeting')));
 elements.homeHistoryRetryButton.addEventListener('click', () => void meetingHistoryListController.retry());
 elements.meetingHomeButton.addEventListener('click', () => setAppState(transitionAppView(appState, 'open-home')));
@@ -343,6 +349,15 @@ function beginMeeting(): void {
   if (appState.meetingEnded) resetMeetingData();
   clearPersistedMeetingDetail();
   meetingSetupDraft = createInitialMeetingSetupDraft(getDefaultProviderKind());
+  setupSummaryStatus = null;
+  const generation = ++setupSummaryGeneration;
+  void summaryClient.status().then((status) => {
+    if (generation !== setupSummaryGeneration || pageUnloading) return;
+    setupSummaryStatus = status;
+    if (appState.view === 'meeting-setup') renderMeetingSetup();
+  }).catch(() => {
+    if (generation === setupSummaryGeneration && appState.view === 'meeting-setup') renderMeetingSetup();
+  });
   renderMeetingSetup();
   setAppState(transitionAppView(appState, 'open-meeting-setup'));
 }
@@ -362,6 +377,8 @@ function renderMeetingSetup(): void {
   elements.setupExternalConfirmation.hidden = !acknowledgementRequired;
   elements.setupCreateButton.disabled = Boolean(
     (meetingSetupDraft.correctionEnabled && !requirements.correctionStatusKnown)
+    || ((meetingSetupDraft.liveSummaryEnabled || meetingSetupDraft.finalSummaryEnabled)
+      && (!requirements.summaryStatusKnown || !requirements.summaryEnabled))
     || (acknowledgementRequired && !meetingSetupDraft.externalProcessingAcknowledged),
   );
   elements.setupSummaryList.replaceChildren(...buildMeetingSetupSummary(meetingSetupDraft, requirements).map((text) => { const li = document.createElement('li'); li.textContent = text; return li; }));
@@ -371,6 +388,7 @@ function createMeetingFromSetup(): void {
   try { meetingSettingsSnapshot = createMeetingSettingsSnapshot(meetingSetupDraft, new Date().toISOString(), correctionExternalProcessingRequirements()); }
   catch { elements.setupTitle.focus(); return; }
   resetMeetingData();
+  meetingSummaryExternalAllowed = Boolean(setupSummaryStatus?.enabled && setupSummaryStatus.apiUsed && meetingSetupDraft.externalProcessingAcknowledged);
   currentMeetingId = createSessionId();
   meetingStartedAt = null;
   meetingEndedAt = null;
@@ -384,6 +402,7 @@ function createMeetingFromSetup(): void {
 }
 
 function resetMeetingData(): void {
+  meetingSummaryExternalAllowed = false;
   summaryCoordinator?.dispose();
   summaryCoordinator = null;
   for (const coordinator of correctionCoordinators.splice(0)) coordinator.dispose();
@@ -617,7 +636,7 @@ function createSummaryCoordinator(meetingId: string): IncrementalSummaryCoordina
     onLiveSummary: renderLiveSummary,
     onUsage: renderUsage,
     onError: (error) => renderSummaryWarning(error.message),
-  });
+  }, meetingSummaryExternalAllowed);
 }
 
 function createCorrectionCoordinator(sessionId: string): CorrectionCoordinator {
@@ -794,6 +813,9 @@ function correctionExternalProcessingRequirements(): MeetingExternalProcessingRe
   return {
     correctionStatusKnown: correctionServiceStatus !== null,
     correctionExternalTransmission: Boolean(correctionServiceStatus?.enabled && correctionServiceStatus.externalTransmission),
+    summaryStatusKnown: setupSummaryStatus !== null,
+    summaryEnabled: setupSummaryStatus?.enabled ?? false,
+    summaryExternalTransmission: Boolean(setupSummaryStatus?.enabled && setupSummaryStatus.apiUsed),
   };
 }
 

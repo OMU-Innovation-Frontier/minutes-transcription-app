@@ -1,5 +1,9 @@
 # Minutes Transcription App
 
+## OpenAIで会議終了時の要約を生成する
+
+既存の最終要約・決定事項・TODO表示と履歴保存に、サーバー側のOpenAI Responses APIを接続できます。会議準備画面で送信内容を説明し、同意後に使用します。既定は無効・Mockのままです。設定と実機テスト手順は[OpenAI最終要約](docs/OPENAI_FINAL_SUMMARY.md)を参照してください。
+
 ## Groq Whisper STT MVP
 
 会議準備画面で`Groq Whisper（無料枠）`を選ぶと、ブラウザーで16 kHz mono PCM16へ変換したマイク音声を既存WebSocket経由でサーバーへ送り、VADで確定した発話だけをGroqへ送信します。モデルは`whisper-large-v3-turbo`、結果は発話終了後のfinal transcriptのみです。
@@ -36,7 +40,7 @@ No Alibaba account, API key, Workspace ID, Free Quota Only setting, payment meth
 - 外部送信しないMock整文、整文状態、`uncertainParts`
 - Whisper原文の確認、最新発話中心のスクロールUI
 - ブラウザーIndexedDBへの未ack音声と整文レコードの保存
-- ライブ要約を差し込める表示領域（Mock／既存データのみ）
+- ライブ要約と会議終了時の最終要約・決定事項・TODO表示（Mock／明示設定したOpenAI）
 
 ## 現在できないこと
 

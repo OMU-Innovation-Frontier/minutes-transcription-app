@@ -9,6 +9,8 @@ export interface SummaryConfig {
   liveReasoningEffort: ReasoningEffort;
   finalReasoningEffort: ReasoningEffort;
   maxOutputTokens?: number;
+  timeoutMs?: number;
+  maxResponseBytes?: number;
   intervalSeconds: number;
   monthlyBudgetUsd?: number;
   meetingBudgetUsd?: number;
@@ -27,7 +29,9 @@ export function loadSummaryConfig(env: NodeJS.ProcessEnv = process.env): Summary
     finalModel: env.OPENAI_FINAL_SUMMARY_MODEL || undefined,
     liveReasoningEffort: readEffort(env.OPENAI_LIVE_REASONING_EFFORT, 'low'),
     finalReasoningEffort: readEffort(env.OPENAI_FINAL_REASONING_EFFORT, 'medium'),
-    maxOutputTokens: readOptionalPositiveInteger(env.OPENAI_MAX_OUTPUT_TOKENS),
+    maxOutputTokens: readOptionalPositiveInteger(env.OPENAI_MAX_OUTPUT_TOKENS) ?? 8192,
+    timeoutMs: readOptionalPositiveInteger(env.SUMMARY_TIMEOUT_MS) ?? 60_000,
+    maxResponseBytes: readOptionalPositiveInteger(env.SUMMARY_MAX_RESPONSE_BYTES) ?? 262_144,
     intervalSeconds: readPositiveNumber(env.SUMMARY_INTERVAL_SECONDS, 10),
     monthlyBudgetUsd: readOptionalNonNegative(env.SUMMARY_MONTHLY_BUDGET_USD),
     meetingBudgetUsd: readOptionalNonNegative(env.SUMMARY_MEETING_BUDGET_USD),

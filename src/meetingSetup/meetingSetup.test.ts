@@ -10,6 +10,30 @@ import {
 } from './meetingSetup';
 
 describe('meeting setup draft and snapshot', () => {
+  it('blocks summary setup while transmission status is unknown or the server has disabled summaries', () => {
+    const draft = { ...createInitialMeetingSetupDraft('local-whisper'), finalSummaryEnabled: true };
+    const requirements = { correctionStatusKnown: true, correctionExternalTransmission: false, summaryStatusKnown: false };
+    expect(validateMeetingSetupDraft(draft, requirements)).toBe('要約のデータ処理方法を確認できません。');
+    expect(validateMeetingSetupDraft(draft, { ...requirements, summaryStatusKnown: true, summaryEnabled: false })).toBe('要約はサーバー設定で無効です。');
+  });
+
+  it.each(['finalSummaryEnabled', 'liveSummaryEnabled'] as const)('requires OpenAI disclosure and consent for %s even with local transcription', (key) => {
+    const draft = { ...createInitialMeetingSetupDraft('local-whisper'), [key]: true };
+    const requirements = { correctionStatusKnown: true, correctionExternalTransmission: false, summaryStatusKnown: true, summaryEnabled: true, summaryExternalTransmission: true };
+    expect(requiresExternalProcessingAcknowledgement(draft, requirements)).toBe(true);
+    expect(validateMeetingSetupDraft(draft, requirements)).toBe('データ処理方法を確認してください。');
+    expect(buildExternalProcessingDisclosure(draft, requirements)).toContain('OpenAIへ送信');
+    expect(buildExternalProcessingDisclosure(draft, requirements)).toContain('音声は要約処理へ送信しません');
+    expect(validateMeetingSetupDraft({ ...draft, externalProcessingAcknowledged: true }, requirements)).toBeNull();
+  });
+
+  it('requires no OpenAI consent for mock summaries or disabled summary choices', () => {
+    const draft = createInitialMeetingSetupDraft('local-whisper');
+    const requirements = { correctionStatusKnown: true, correctionExternalTransmission: false, summaryStatusKnown: true, summaryEnabled: true, summaryExternalTransmission: true };
+    expect(buildExternalProcessingDisclosure(draft, requirements)).toBe('');
+    expect(requiresExternalProcessingAcknowledgement({ ...draft, finalSummaryEnabled: true }, { ...requirements, summaryExternalTransmission: false })).toBe(false);
+  });
+
   it('requires explicit acknowledgement and describes Groq Whisper precisely', () => {
     const draft = createInitialMeetingSetupDraft('groq-whisper');
     const option = meetingTranscriptionCatalog.find((item) => item.id === 'groq-whisper');

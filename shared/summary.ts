@@ -118,8 +118,9 @@ export const FINAL_SUMMARY_JSON_SCHEMA = {
 
 export function validateLiveMeetingSummary(value: unknown, allowedEvidenceIds?: ReadonlySet<string>): LiveMeetingSummary {
   const object = requireObject(value, 'live summary');
+  requireKeys(object, ['version', 'topic', 'keyPoints', 'decisions', 'actionItems', 'openQuestions']);
   requireVersion(object.version);
-  if (object.topic !== null && typeof object.topic !== 'string') throw new Error('topicが不正です。');
+  if (object.topic !== null) requireText(object.topic, true);
   validateEvidenceItems(object.keyPoints, allowedEvidenceIds);
   validateEvidenceItems(object.decisions, allowedEvidenceIds);
   validateActionItems(object.actionItems, allowedEvidenceIds);
@@ -129,8 +130,9 @@ export function validateLiveMeetingSummary(value: unknown, allowedEvidenceIds?: 
 
 export function validateFinalMeetingSummary(value: unknown, allowedEvidenceIds?: ReadonlySet<string>): FinalMeetingSummary {
   const object = requireObject(value, 'final summary');
+  requireKeys(object, ['version', 'overview', 'agenda', 'keyPoints', 'decisions', 'unresolvedItems', 'actionItems', 'nextChecks']);
   requireVersion(object.version);
-  if (typeof object.overview !== 'string') throw new Error('overviewが不正です。');
+  requireText(object.overview, true);
   validateEvidenceItems(object.agenda, allowedEvidenceIds);
   validateEvidenceItems(object.keyPoints, allowedEvidenceIds);
   validateEvidenceItems(object.decisions, allowedEvidenceIds);
@@ -163,28 +165,38 @@ function requireVersion(value: unknown): void {
 }
 
 function validateEvidenceItems(value: unknown, allowed?: ReadonlySet<string>): void {
-  if (!Array.isArray(value)) throw new Error('要約項目が配列ではありません。');
+  if (!Array.isArray(value) || value.length > 100) throw new Error('要約項目が配列ではないか上限を超えています。');
   for (const item of value) {
     const object = requireObject(item, 'summary item');
-    if (typeof object.text !== 'string' || !object.text.trim()) throw new Error('要約本文が空です。');
+    requireKeys(object, ['text', 'evidenceSentenceIds']);
+    requireText(object.text);
     validateEvidenceIds(object.evidenceSentenceIds, allowed);
   }
 }
 
 function validateActionItems(value: unknown, allowed?: ReadonlySet<string>): void {
-  if (!Array.isArray(value)) throw new Error('actionItemsが配列ではありません。');
+  if (!Array.isArray(value) || value.length > 100) throw new Error('actionItemsが配列ではないか上限を超えています。');
   for (const item of value) {
     const object = requireObject(item, 'action item');
-    if (typeof object.task !== 'string' || !object.task.trim()) throw new Error('taskが空です。');
-    if (object.assignee !== null && typeof object.assignee !== 'string') throw new Error('assigneeが不正です。');
-    if (object.dueDate !== null && typeof object.dueDate !== 'string') throw new Error('dueDateが不正です。');
+    requireKeys(object, ['task', 'assignee', 'dueDate', 'evidenceSentenceIds']);
+    requireText(object.task);
+    if (object.assignee !== null) requireText(object.assignee);
+    if (object.dueDate !== null) requireText(object.dueDate);
     validateEvidenceIds(object.evidenceSentenceIds, allowed);
   }
 }
 
 function validateEvidenceIds(value: unknown, allowed?: ReadonlySet<string>): void {
-  if (!Array.isArray(value) || value.length === 0 || value.some((id) => typeof id !== 'string')) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 2000 || value.some((id) => typeof id !== 'string' || !id.trim() || id.length > 256)) {
     throw new Error('根拠文IDがありません。');
   }
   if (allowed && value.some((id) => !allowed.has(id as string))) throw new Error('未知の根拠文IDが含まれています。');
+}
+
+function requireKeys(object: Record<string, unknown>, keys: string[]): void {
+  if (Object.keys(object).length !== keys.length || keys.some((key) => !Object.hasOwn(object, key))) throw new Error('要約のフィールドが不正です。');
+}
+
+function requireText(value: unknown, allowEmpty = false): void {
+  if (typeof value !== 'string' || value.length > 20_000 || (!allowEmpty && !value.trim())) throw new Error('要約本文が不正です。');
 }
