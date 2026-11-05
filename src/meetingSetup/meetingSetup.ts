@@ -24,6 +24,16 @@ export interface MeetingTranscriptionOption {
   externalAcknowledgementRequired: boolean;
 }
 
+export interface MeetingExternalProcessingRequirements {
+  correctionStatusKnown: boolean;
+  correctionExternalTransmission: boolean;
+}
+
+const LOCAL_CORRECTION_REQUIREMENTS: MeetingExternalProcessingRequirements = {
+  correctionStatusKnown: true,
+  correctionExternalTransmission: false,
+};
+
 export const meetingTranscriptionCatalog: readonly MeetingTranscriptionOption[] = [
   { id: 'groq-whisper', label: 'Groq Whisper（無料枠）', description: '音声を文字起こしするためGroqへ送信します。無料枠には利用上限があり、提供条件は変更される場合があります。', audience: 'standard', externalAcknowledgementRequired: true },
   { id: 'local-whisper', label: 'Local Whisper', description: 'このPCのローカルサーバーで音声を処理します。外部STT APIへ音声を送信しません。', audience: 'standard', externalAcknowledgementRequired: false },
@@ -36,24 +46,60 @@ export function createInitialMeetingSetupDraft(provider: SpeechToTextProviderKin
   return { title: '新しい会議', language: 'ja-JP', transcriptionProvider: provider, correctionEnabled: false, liveSummaryEnabled: false, finalSummaryEnabled: false, historyRetention: 'page-session', externalProcessingAcknowledged: false };
 }
 
-export function validateMeetingSetupDraft(draft: MeetingSetupDraft): string | null {
+export function validateMeetingSetupDraft(
+  draft: MeetingSetupDraft,
+  requirements: MeetingExternalProcessingRequirements = LOCAL_CORRECTION_REQUIREMENTS,
+): string | null {
   const title = draft.title.trim();
   if (!title) return '会議タイトルを入力してください。';
   if (title.length > 80) return '会議タイトルは80文字以内で入力してください。';
   if (draft.language !== 'ja-JP' && draft.language !== 'en-US') return '言語を選択してください。';
   const option = meetingTranscriptionCatalog.find((item) => item.id === draft.transcriptionProvider);
   if (!option) return '文字起こし方法を選択してください。';
-  if (option.externalAcknowledgementRequired && !draft.externalProcessingAcknowledged) return 'データ処理方法を確認してください。';
+  if (draft.correctionEnabled && !requirements.correctionStatusKnown) return '整文のデータ処理方法を確認できません。';
+  if (requiresExternalProcessingAcknowledgement(draft, requirements) && !draft.externalProcessingAcknowledged) return 'データ処理方法を確認してください。';
   return null;
 }
 
-export function createMeetingSettingsSnapshot(draft: MeetingSetupDraft, createdAt: string): MeetingSettingsSnapshot {
-  const error = validateMeetingSetupDraft(draft);
+export function createMeetingSettingsSnapshot(
+  draft: MeetingSetupDraft,
+  createdAt: string,
+  requirements: MeetingExternalProcessingRequirements = LOCAL_CORRECTION_REQUIREMENTS,
+): MeetingSettingsSnapshot {
+  const error = validateMeetingSetupDraft(draft, requirements);
   if (error) throw new Error(error);
   return Object.freeze({ settingsVersion: 1 as const, title: draft.title.trim(), language: draft.language, transcriptionProvider: draft.transcriptionProvider, correctionEnabled: draft.correctionEnabled, liveSummaryEnabled: draft.liveSummaryEnabled, finalSummaryEnabled: draft.finalSummaryEnabled, historyRetention: 'page-session' as const, createdAt });
 }
 
-export function buildMeetingSetupSummary(draft: MeetingSetupDraft): string[] {
+export function buildMeetingSetupSummary(
+  draft: MeetingSetupDraft,
+  requirements: MeetingExternalProcessingRequirements = LOCAL_CORRECTION_REQUIREMENTS,
+): string[] {
   const option = meetingTranscriptionCatalog.find((item) => item.id === draft.transcriptionProvider);
-  return [`${draft.language === 'ja-JP' ? '日本語' : 'English'}で文字起こしします。`, `${option?.label ?? '選択した方法'}を使用します。`, option?.description ?? '処理方法は確認できません。', draft.correctionEnabled ? '確定した発言を読みやすく整えます。' : '整文は使用しません。', draft.liveSummaryEnabled ? '会議中に簡易要約を表示します。' : '会議中の簡易要約は使用しません。', draft.finalSummaryEnabled ? '会議終了後に最終要約とTODOを作成します。' : '最終要約とTODOは作成しません。', '会議終了後、履歴はこの端末のブラウザー内へ保存され、ページを閉じて開き直しても確認できます。', 'サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。クラウド保存・チーム共有・アカウント保護には対応していません。'];
+  const correctionSummary = draft.correctionEnabled && requirements.correctionExternalTransmission
+    ? '確定した発言を読みやすく整えます。確定した文字起こし、直前の発話、設定した用語集を整文のためGroqへ送信します。'
+    : draft.correctionEnabled ? '確定した発言を読みやすく整えます。' : '整文は使用しません。';
+  return [`${draft.language === 'ja-JP' ? '日本語' : 'English'}で文字起こしします。`, `${option?.label ?? '選択した方法'}を使用します。`, option?.description ?? '処理方法は確認できません。', correctionSummary, draft.liveSummaryEnabled ? '会議中に簡易要約を表示します。' : '会議中の簡易要約は使用しません。', draft.finalSummaryEnabled ? '会議終了後に最終要約とTODOを作成します。' : '最終要約とTODOは作成しません。', '会議終了後、履歴はこの端末のブラウザー内へ保存され、ページを閉じて開き直しても確認できます。', 'サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。クラウド保存・チーム共有・アカウント保護には対応していません。'];
+}
+
+export function requiresExternalProcessingAcknowledgement(
+  draft: MeetingSetupDraft,
+  requirements: MeetingExternalProcessingRequirements = LOCAL_CORRECTION_REQUIREMENTS,
+): boolean {
+  const option = meetingTranscriptionCatalog.find((item) => item.id === draft.transcriptionProvider);
+  return Boolean(option?.externalAcknowledgementRequired)
+    || (draft.correctionEnabled && requirements.correctionExternalTransmission);
+}
+
+export function buildExternalProcessingDisclosure(
+  draft: MeetingSetupDraft,
+  requirements: MeetingExternalProcessingRequirements = LOCAL_CORRECTION_REQUIREMENTS,
+): string {
+  const messages: string[] = [];
+  const option = meetingTranscriptionCatalog.find((item) => item.id === draft.transcriptionProvider);
+  if (option?.externalAcknowledgementRequired) messages.push(option.description);
+  if (draft.correctionEnabled && requirements.correctionExternalTransmission) {
+    messages.push('確定した文字起こし、直前の発話、設定した用語集を整文のためGroqへ送信します。');
+  }
+  return messages.join(' ');
 }

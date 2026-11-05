@@ -53,7 +53,17 @@ import {
 import { presentLiveSummary } from './ui/liveSummaryView';
 import { followStateAfterScroll, shouldFollowTranscriptUpdate } from './ui/scrollFollow';
 import { createRawSegmentElement, createSentenceElement } from './ui/transcriptView';
-import { buildMeetingSetupSummary, createInitialMeetingSetupDraft, createMeetingSettingsSnapshot, meetingTranscriptionCatalog, type MeetingSettingsSnapshot, type MeetingSetupDraft } from './meetingSetup/meetingSetup';
+import {
+  buildExternalProcessingDisclosure,
+  buildMeetingSetupSummary,
+  createInitialMeetingSetupDraft,
+  createMeetingSettingsSnapshot,
+  meetingTranscriptionCatalog,
+  requiresExternalProcessingAcknowledgement,
+  type MeetingExternalProcessingRequirements,
+  type MeetingSettingsSnapshot,
+  type MeetingSetupDraft,
+} from './meetingSetup/meetingSetup';
 import { renderMeetingSettingsSummary } from './meetingSetup/meetingSettingsSummary';
 import {
   FinalMeetingSummaryController,
@@ -84,6 +94,7 @@ const elements = {
   setupLiveSummary: requiredElement<HTMLInputElement>('setup-live-summary'),
   setupFinalSummary: requiredElement<HTMLInputElement>('setup-final-summary'),
   setupExternalConfirmation: requiredElement<HTMLElement>('setup-external-confirmation'),
+  setupExternalDescription: requiredElement<HTMLElement>('setup-external-description'),
   setupExternalAck: requiredElement<HTMLInputElement>('setup-external-ack'),
   setupSummaryList: requiredElement<HTMLUListElement>('setup-summary-list'),
   setupCreateButton: requiredElement<HTMLButtonElement>('setup-create-button'),
@@ -215,6 +226,7 @@ let reconnectAttempt = 0;
 let reconnectMaxAttempts = 0;
 let summaryCoordinator: IncrementalSummaryCoordinator | null = null;
 let correctionCoordinator: CorrectionCoordinator | null = null;
+let correctionServiceStatus: CorrectionServiceStatus | null = null;
 const correctionCoordinators: CorrectionCoordinator[] = [];
 let latestLiveSummary: LiveMeetingSummary | null = null;
 let latestSummaryStatus: SummaryStatus | null = null;
@@ -343,14 +355,20 @@ function cancelMeetingSetup(): void {
 function renderMeetingSetup(): void {
   meetingSetupDraft = { title: elements.setupTitle.value, language: elements.setupLanguage.value as MeetingSetupDraft['language'], transcriptionProvider: elements.setupProvider.value as MeetingSetupDraft['transcriptionProvider'], correctionEnabled: elements.setupCorrection.checked, liveSummaryEnabled: elements.setupLiveSummary.checked, finalSummaryEnabled: elements.setupFinalSummary.checked, historyRetention: 'page-session', externalProcessingAcknowledged: elements.setupExternalAck.checked };
   const option = meetingTranscriptionCatalog.find((item) => item.id === meetingSetupDraft.transcriptionProvider);
+  const requirements = correctionExternalProcessingRequirements();
+  const acknowledgementRequired = requiresExternalProcessingAcknowledgement(meetingSetupDraft, requirements);
   elements.setupProviderDescription.textContent = option?.description ?? '';
-  elements.setupExternalConfirmation.hidden = !option?.externalAcknowledgementRequired;
-  elements.setupCreateButton.disabled = Boolean(option?.externalAcknowledgementRequired && !meetingSetupDraft.externalProcessingAcknowledged);
-  elements.setupSummaryList.replaceChildren(...buildMeetingSetupSummary(meetingSetupDraft).map((text) => { const li = document.createElement('li'); li.textContent = text; return li; }));
+  elements.setupExternalDescription.textContent = buildExternalProcessingDisclosure(meetingSetupDraft, requirements);
+  elements.setupExternalConfirmation.hidden = !acknowledgementRequired;
+  elements.setupCreateButton.disabled = Boolean(
+    (meetingSetupDraft.correctionEnabled && !requirements.correctionStatusKnown)
+    || (acknowledgementRequired && !meetingSetupDraft.externalProcessingAcknowledged),
+  );
+  elements.setupSummaryList.replaceChildren(...buildMeetingSetupSummary(meetingSetupDraft, requirements).map((text) => { const li = document.createElement('li'); li.textContent = text; return li; }));
 }
 
 function createMeetingFromSetup(): void {
-  try { meetingSettingsSnapshot = createMeetingSettingsSnapshot(meetingSetupDraft, new Date().toISOString()); }
+  try { meetingSettingsSnapshot = createMeetingSettingsSnapshot(meetingSetupDraft, new Date().toISOString(), correctionExternalProcessingRequirements()); }
   catch { elements.setupTitle.focus(); return; }
   resetMeetingData();
   currentMeetingId = createSessionId();
@@ -765,9 +783,18 @@ function scrollToLatestTranscript(): void {
 }
 
 function renderCorrectionStatus(status: CorrectionServiceStatus): void {
+  correctionServiceStatus = status;
   const presentation = correctionStatusPresentation(status);
   elements.correctionStatus.textContent = presentation.statusText;
   elements.correctionPrivacy.textContent = presentation.privacyText;
+  if (appState.view === 'meeting-setup') renderMeetingSetup();
+}
+
+function correctionExternalProcessingRequirements(): MeetingExternalProcessingRequirements {
+  return {
+    correctionStatusKnown: correctionServiceStatus !== null,
+    correctionExternalTransmission: Boolean(correctionServiceStatus?.enabled && correctionServiceStatus.externalTransmission),
+  };
 }
 
 function renderCorrectionWarning(message: string): void {

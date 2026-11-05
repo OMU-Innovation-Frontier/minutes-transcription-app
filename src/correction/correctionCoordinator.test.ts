@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createFallbackCorrection, type CorrectionInput, type CorrectionRequest, type CorrectionServiceStatus, type TranscriptCorrection } from '../../shared/correction';
 import { TranscriptStore } from '../transcription/transcriptStore';
 import type { CompletedSentence, TranscriptUpdate } from '../transcription/types';
-import { CorrectionCoordinator, MemoryCorrectionStorage, type CorrectionHttpClient } from './correctionClient';
+import { CorrectionCoordinator, CorrectionHttpClient, MemoryCorrectionStorage } from './correctionClient';
 
 const enabledStatus: CorrectionServiceStatus = {
   enabled: true,
@@ -51,6 +51,51 @@ function client(correct: (input: CorrectionInput, signal: AbortSignal) => Promis
     correct: async (request: CorrectionRequest, signal: AbortSignal) => correct(request.input, signal),
   } as unknown as CorrectionHttpClient;
 }
+
+describe('CorrectionHttpClient', () => {
+  it('accepts a safe namespaced Groq model label in a matching response', async () => {
+    const request: CorrectionRequest = {
+      requestId: 'request-1',
+      meetingId: 'meeting-1',
+      sessionId: 'session-1',
+      segmentId: 'sentence-1',
+      revision: 0,
+      attemptCount: 1,
+      input: {
+        targetSegmentId: 'sentence-1',
+        targetRawText: 'synthetic text',
+        previousSegments: [],
+        language: 'en',
+        glossary: [],
+        correctionPolicyVersion: 'safe-correction-v1',
+        removeFillers: false,
+        sourceSegmentIds: ['segment-1'],
+      },
+    };
+    const response = {
+      ...createFallbackCorrection(request.input.targetRawText, 'pending', request.input.sourceSegmentIds),
+      status: 'completed' as const,
+      provider: 'groq',
+      model: 'openai/gpt-oss-20b',
+      requestId: request.requestId,
+      segmentId: request.segmentId,
+      revision: request.revision,
+      attemptCount: request.attemptCount,
+      policyVersion: request.input.correctionPolicyVersion,
+    };
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const httpClient = new CorrectionHttpClient('http://127.0.0.1:8787', fetchMock);
+
+    await expect(httpClient.correct(request, new AbortController().signal)).resolves.toMatchObject({
+      status: 'completed',
+      provider: 'groq',
+      model: 'openai/gpt-oss-20b',
+    });
+  });
+});
 
 describe('CorrectionCoordinator', () => {
   it('shows raw correction state immediately while work is pending', async () => {

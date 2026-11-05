@@ -86,7 +86,7 @@ describe('CorrectionService', () => {
       new MockCorrectionProvider({ scenario: 'timeout' }),
     );
     await expect(service.correct(request())).resolves.toMatchObject({
-      rawText: 'こんにちわ', correctedText: 'こんにちわ', status: 'failed', errorCode: 'timeout',
+      rawText: 'こんにちわ', correctedText: 'こんにちわ', status: 'failed', errorCode: 'request_timeout',
     });
   });
 

@@ -39,7 +39,7 @@ export function correctionStatusPresentation(status: CorrectionServiceStatus): C
   if (status.externalTransmission) {
     return {
       statusText: `LLM整文：有効（${status.provider}・文字起こし外部送信あり）`,
-      privacyText: 'Local Whisperの音声認識はローカルです。クラウドLLM整文を有効にすると、確定した文字起こし文章が外部送信されます。',
+      privacyText: 'クラウドLLM整文では文字起こし文章が外部送信されます。確定した文字起こし、直前の発話、設定した用語集を整文のためGroqへ送信します。音声の送信有無は選択した文字起こし方法によって異なります。',
     };
   }
   return {

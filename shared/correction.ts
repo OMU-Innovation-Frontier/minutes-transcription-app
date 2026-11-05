@@ -112,6 +112,7 @@ export interface CorrectionServiceStatus {
   maxInputChars: number;
   removeFillers: boolean;
   correctionPolicyVersion: string;
+  policyVersion?: string;
   queueLimit: number;
   maxAttempts: number;
 }
@@ -283,7 +284,13 @@ export function validateCorrectionOutput(
   options: CorrectionValidationOptions,
 ): CorrectionProviderOutput {
   const parsed = typeof value === 'string' ? parseJson(value) : value;
-  if (!isRecord(parsed) || typeof parsed.correctedText !== 'string' || !Array.isArray(parsed.changes) || !Array.isArray(parsed.uncertainParts)) {
+  if (
+    !isRecord(parsed)
+    || !hasOnlyKeys(parsed, ['correctedText', 'changes', 'uncertainParts'])
+    || typeof parsed.correctedText !== 'string'
+    || !Array.isArray(parsed.changes)
+    || !Array.isArray(parsed.uncertainParts)
+  ) {
     throw new CorrectionValidationError('invalid_output_shape', '整文出力の形式が不正です。');
   }
   if (parsed.changes.length > 100 || parsed.uncertainParts.length > 20) {
@@ -358,7 +365,7 @@ export function uncertainReasonForToken(token: string): CorrectionUncertainReaso
 }
 
 function parseChange(value: unknown): CorrectionChange {
-  if (!isRecord(value) || typeof value.before !== 'string' || !value.before || typeof value.after !== 'string' || !CHANGE_REASONS.has(value.reason as CorrectionChangeReason)) {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['before', 'after', 'reason']) || typeof value.before !== 'string' || !value.before || typeof value.after !== 'string' || !CHANGE_REASONS.has(value.reason as CorrectionChangeReason)) {
     throw new CorrectionValidationError('invalid_change', 'changesの項目が不正です。');
   }
   if (value.after.length > value.before.length * 2 + 16) {
@@ -368,7 +375,7 @@ function parseChange(value: unknown): CorrectionChange {
 }
 
 function parseUncertainPart(value: unknown): CorrectionUncertainPart {
-  if (!isRecord(value) || typeof value.text !== 'string' || !value.text || !UNCERTAIN_REASONS.has(value.reason as CorrectionUncertainReason)) {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['text', 'reason']) || typeof value.text !== 'string' || !value.text || !UNCERTAIN_REASONS.has(value.reason as CorrectionUncertainReason)) {
     throw new CorrectionValidationError('invalid_uncertain_part', 'uncertainPartsの項目が不正です。');
   }
   if (value.text.length > 200 || containsUnsafeControl(value.text)) {
@@ -486,6 +493,11 @@ function isSafeIdentifier(value: unknown): value is string {
     && value.length <= 200
     && value.trim() === value
     && !containsUnsafeControl(value);
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  const allowedKeys = new Set(allowed);
+  return Object.keys(value).every((key) => allowedKeys.has(key));
 }
 
 function containsUnsafeControl(value: string): boolean {

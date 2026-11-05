@@ -165,6 +165,7 @@ const DISABLED_STATUS: CorrectionServiceStatus = {
   maxInputChars: 4_000,
   removeFillers: false,
   correctionPolicyVersion: CORRECTION_POLICY_VERSION,
+  policyVersion: CORRECTION_POLICY_VERSION,
   queueLimit: CORRECTION_QUEUE_LIMIT,
   maxAttempts: CORRECTION_MAX_ATTEMPTS,
 };
@@ -455,8 +456,8 @@ function validateResponse(value: unknown, request: CorrectionRequest): Transcrip
     || record.revision !== request.revision
     || record.attemptCount !== request.attemptCount
     || record.policyVersion !== input.correctionPolicyVersion
-    || !isSafeLabel(record.provider)
-    || !isSafeLabel(record.model)) {
+    || !isSafeProviderLabel(record.provider)
+    || !isSafeModelLabel(record.model)) {
     throw new Error('整文レスポンスの原文参照が一致しません。');
   }
   if (record.status === 'succeeded' || record.status === 'completed') {
@@ -608,22 +609,41 @@ function isTerminalStatus(status: TranscriptCorrection['status'] | undefined): b
   return status === 'succeeded' || status === 'completed' || status === 'disabled' || status === 'skipped';
 }
 
-function isSafeLabel(value: unknown): value is string {
+function isSafeProviderLabel(value: unknown): value is string {
   return typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/u.test(value);
 }
 
+function isSafeModelLabel(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length <= 128
+    && /^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)*$/u.test(value);
+}
+
 const SAFE_FAILURE_CODES = new Set([
+  'api_key_missing',
+  'authentication_failed',
   'cancelled',
   'empty_text',
+  'empty_response',
+  'external_disabled',
   'input_too_long',
   'interrupted',
+  'invalid_configuration',
+  'invalid_content_type',
   'invalid_response',
   'output_validation_failed',
+  'permission_denied',
   'protected_token_mismatch',
   'provider_unavailable',
   'queue_full',
+  'rate_limited',
+  'refused',
+  'request_failed',
+  'request_timeout',
+  'response_too_large',
   'stale_result',
   'timeout',
+  'unsupported_model',
   'unknown_safe_failure',
 ]);
 
