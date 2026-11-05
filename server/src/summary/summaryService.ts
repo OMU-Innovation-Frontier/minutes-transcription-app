@@ -14,6 +14,7 @@ import { MockSummaryProvider } from './mockSummaryProvider.js';
 import { OpenAISummaryProvider } from './openAISummaryProvider.js';
 import { estimateCostUsd, parsePricingTable } from './pricing.js';
 import { ApiUsageStore } from './usageStore.js';
+import { validateSummaryInput } from './summaryInput.js';
 
 export class SummaryService {
   private readonly pricing;
@@ -28,6 +29,8 @@ export class SummaryService {
 
   async update(input: IncrementalSummaryInput): Promise<LiveMeetingSummary> {
     this.validateEnabled();
+    try { input = validateSummaryInput(input, false); }
+    catch { throw new SummaryServiceError('invalid_request', '要約リクエストが不正です。', 400); }
     if (input.newSentences.length === 0) throw new SummaryServiceError('no_new_sentences', '新しい完成文がありません。', 400);
     await this.checkBudget(input.meetingId, this.config.liveModel);
     let summary: LiveMeetingSummary;
@@ -49,6 +52,8 @@ export class SummaryService {
 
   async finalize(input: FinalSummaryInput): Promise<FinalMeetingSummary> {
     this.validateEnabled();
+    try { input = validateSummaryInput(input, true); }
+    catch { throw new SummaryServiceError('invalid_request', '要約リクエストが不正です。', 400); }
     await this.checkBudget(input.meetingId, this.config.finalModel);
     let summary: FinalMeetingSummary;
     try {
@@ -62,6 +67,10 @@ export class SummaryService {
 
   async usage(meetingId: string): Promise<MeetingUsageSummary> {
     return this.usageStore.meetingSummary(meetingId);
+  }
+
+  dispose(): void {
+    if (this.provider instanceof OpenAISummaryProvider) this.provider.dispose();
   }
 
   status(): { enabled: boolean; provider: 'mock' | 'openai'; apiUsed: boolean; intervalSeconds: number } {
@@ -127,6 +136,8 @@ export function createSummaryService(config: SummaryConfig): SummaryService {
         liveReasoningEffort: config.liveReasoningEffort,
         finalReasoningEffort: config.finalReasoningEffort,
         maxOutputTokens: config.maxOutputTokens,
+        timeoutMs: config.timeoutMs,
+        maxResponseBytes: config.maxResponseBytes,
       })
     : new MockSummaryProvider();
   return new SummaryService(config, provider, new ApiUsageStore(config.usageFile));

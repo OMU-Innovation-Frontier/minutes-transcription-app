@@ -101,6 +101,7 @@ export class IncrementalSummaryCoordinator {
     private readonly meetingId: string,
     private readonly batchSize: number,
     private readonly callbacks: SummaryCoordinatorCallbacks = {},
+    private readonly allowExternalTransmission = false,
   ) {}
 
   async initialize(): Promise<void> {
@@ -111,6 +112,7 @@ export class IncrementalSummaryCoordinator {
       try {
         const status = await this.client.status();
         if (!this.isCurrent(generation)) return;
+        if (status.apiUsed && !this.allowExternalTransmission) throw new Error('外部要約への同意がありません。');
         this.statusValue = status;
         this.statusLoaded = true;
         this.callbacks.onStatus?.(status);
@@ -238,6 +240,7 @@ function validateSummaryStatus(value: unknown): SummaryStatus {
   if (typeof candidate.enabled !== 'boolean'
     || (candidate.provider !== 'mock' && candidate.provider !== 'openai')
     || typeof candidate.apiUsed !== 'boolean'
+    || candidate.apiUsed !== (candidate.enabled && candidate.provider === 'openai')
     || typeof candidate.intervalSeconds !== 'number'
     || !Number.isFinite(candidate.intervalSeconds)
     || candidate.intervalSeconds <= 0) {

@@ -93,6 +93,10 @@ export function createTranscriptionServer(options: TranscriptionServerOptions = 
       return;
     }
     if (request.method === 'POST' && (url.pathname === '/api/summary/live' || url.pathname === '/api/summary/final')) {
+      if (origin && !config.allowedOrigins.has(origin)) {
+        sendJson(response, 403, { code: 'invalid_origin', message: 'この接続元からは要約を実行できません。' });
+        return;
+      }
       void readJsonBody(request)
         .then((body): Promise<unknown> => url.pathname.endsWith('/live')
           ? summaryService.update(body as IncrementalSummaryInput)
@@ -176,6 +180,7 @@ export function createTranscriptionServer(options: TranscriptionServerOptions = 
       await sessionRegistry.closeAll();
       await providerRuntime?.close();
       await correctionService.dispose();
+      summaryService.dispose();
       await Promise.all([
         new Promise<void>((resolve) => websocketServer.close(() => resolve())),
         new Promise<void>((resolve, reject) => {
