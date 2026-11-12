@@ -1,3 +1,5 @@
+import { createMeetingRecord } from './history/meetingRecord';
+import { loadMeetingDraft, saveMeetingDraft, removeMeetingDraft } from './history/meetingDraft';
 import './styles.css';
 import type { LiveMeetingSummary, MeetingUsageSummary } from '../shared/summary';
 import type { CorrectionServiceStatus } from '../shared/correction';
@@ -327,6 +329,8 @@ elements.providerSelect.addEventListener('change', renderProviderDetails);
 elements.languageSelect.addEventListener('change', renderProviderDetails);
 window.addEventListener('keydown', handleGlobalKeydown);
 window.addEventListener('pagehide', () => {
+  transcriptStore.finalizeRecording();
+  persistActiveMeeting();
   pageUnloading = true;
   window.clearInterval(elapsedTimer);
   meetingHistoryListController.dispose();
@@ -399,6 +403,7 @@ function createMeetingFromSetup(): void {
   renderProviderDetails();
   renderMeetingSettingsSummary(elements.meetingSettingsSummary, meetingSettingsSnapshot);
   setAppState(transitionAppView(appState, 'create-meeting'));
+  persistActiveMeeting();
 }
 
 function resetMeetingData(): void {
@@ -461,48 +466,52 @@ async function startSession(): Promise<void> {
   try {
     await capture.start(provider.audioCaptureMode);
   } catch (error) {
+    await stopFailedRecording();
     renderError(error);
-    await provider.abort();
-    sessionTransition = false;
-    renderControls();
     return;
   }
 
-  const startPromise = provider.start({
-    sessionId: currentSessionId,
-    language: meetingSettingsSnapshot.language as TranscriptionLanguage,
-    audioFormat: capture.currentMimeType,
-    callbacks: {
-      onStateChange: renderTranscriptionState,
-      onReconnectAttempt: (attempt, maxAttempts) => {
-        reconnectAttempt = attempt;
-        reconnectMaxAttempts = maxAttempts;
-        elements.reconnectAttempt.textContent = attempt > 0 ? `${attempt} / ${maxAttempts}` : '—';
-        renderConnectionNote();
+  try {
+    await provider.start({
+      sessionId: currentSessionId,
+      language: meetingSettingsSnapshot.language as TranscriptionLanguage,
+      audioFormat: capture.currentMimeType,
+      callbacks: {
+        onStateChange: renderTranscriptionState,
+        onReconnectAttempt: (attempt, maxAttempts) => {
+          reconnectAttempt = attempt;
+          reconnectMaxAttempts = maxAttempts;
+          elements.reconnectAttempt.textContent = attempt > 0 ? `${attempt} / ${maxAttempts}` : '—';
+          renderConnectionNote();
+        },
+        onTranscript: (update) => {
+          if (transcriptStore.apply(update)) handleTranscriptChange();
+        },
+        onError: handleProviderError,
+        onWarning: handleProviderWarning,
+        onBufferedAudioChange: (snapshot) => {
+          elements.bufferedAudio.textContent = `${Math.ceil(snapshot.durationSeconds)}秒`;
+          if (snapshot.limitReached) renderBufferWarning('未送信音声が上限に達しました。接続状態を確認してください。');
+        },
+        onProviderStatus: (status) => {
+          elements.localWhisperQueue.textContent = String(status.queueLength);
+          elements.localWhisperModel.textContent = status.model ?? 'whisper-small-q5_1';
+          elements.localWhisperLanguage.textContent = status.language === 'ja' ? '日本語' : 'English';
+          if (status.audioDurationMs !== undefined) elements.localWhisperAudioDuration.textContent = `${(status.audioDurationMs / 1_000).toFixed(2)}秒`;
+          if (status.processingTimeMs !== undefined) elements.localWhisperProcessingTime.textContent = `${(status.processingTimeMs / 1_000).toFixed(2)}秒`;
+          if (status.realTimeFactor !== undefined) elements.localWhisperRtf.textContent = status.realTimeFactor.toFixed(3);
+        },
       },
-      onTranscript: (update) => {
-        if (transcriptStore.apply(update)) handleTranscriptChange();
-      },
-      onError: handleProviderError,
-      onWarning: handleProviderWarning,
-      onBufferedAudioChange: (snapshot) => {
-        elements.bufferedAudio.textContent = `${Math.ceil(snapshot.durationSeconds)}秒`;
-        if (snapshot.limitReached) renderBufferWarning('未送信音声が上限に達しました。接続状態を確認してください。');
-      },
-      onProviderStatus: (status) => {
-        elements.localWhisperQueue.textContent = String(status.queueLength);
-        elements.localWhisperModel.textContent = status.model ?? 'whisper-small-q5_1';
-        elements.localWhisperLanguage.textContent = status.language === 'ja' ? '日本語' : 'English';
-        if (status.audioDurationMs !== undefined) elements.localWhisperAudioDuration.textContent = `${(status.audioDurationMs / 1_000).toFixed(2)}秒`;
-        if (status.processingTimeMs !== undefined) elements.localWhisperProcessingTime.textContent = `${(status.processingTimeMs / 1_000).toFixed(2)}秒`;
-        if (status.realTimeFactor !== undefined) elements.localWhisperRtf.textContent = status.realTimeFactor.toFixed(3);
-      },
-    },
-  });
-  void startPromise.catch(handleProviderError);
-  meetingHasRecorded = true;
-  sessionTransition = false;
-  renderControls();
+    });
+    meetingHasRecorded = true;
+    persistActiveMeeting();
+  } catch (error) {
+    await stopFailedRecording();
+    renderError(error);
+  } finally {
+    sessionTransition = false;
+    renderControls();
+  }
 }
 
 async function pauseSession(): Promise<void> {
@@ -562,6 +571,7 @@ async function finishMeeting(): Promise<void> {
     ? await meetingHistoryPersistence.saveEndedMeeting(endedSnapshot)
     : false;
   if (initialHistorySaved) {
+    try { removeMeetingDraft(currentMeetingId); } catch { /* Keep the saved history available. */ }
     currentMeetingPersisted = true;
     renderDetailView();
     void meetingHistoryListController.refresh();
@@ -647,6 +657,7 @@ function createCorrectionCoordinator(sessionId: string): CorrectionCoordinator {
 }
 
 function handleTranscriptChange(): void {
+  persistActiveMeeting();
   const snapshot = transcriptStore.snapshot();
   renderTranscript();
   correctionCoordinator?.add(snapshot.completedSentences);
@@ -1124,6 +1135,7 @@ function closeEndMeetingDialog(): void {
 }
 
 function updateMeetingTitle(): void {
+  persistActiveMeeting();
   elements.meetingTitle.textContent = meetingTitle();
   if (meetingDetailSource?.kind !== 'persisted') elements.detailTitle.textContent = meetingTitle();
 }
@@ -1140,6 +1152,27 @@ function handleCaptureError(error: MicrophoneError): void {
 function handleProviderError(error: TranscriptionError): void {
   renderError(error);
   renderConnectionNote();
+  if (!sessionTransition && captureState === 'recording') void stopFailedRecording();
+}
+
+async function stopFailedRecording(): Promise<void> {
+  sessionTransition = true;
+  renderControls();
+  try {
+    await capture.stop();
+  } catch {
+    renderError('マイクの停止に失敗しました。ページを閉じてください。');
+  }
+  try {
+    await provider.abort();
+  } catch {
+    // Preserve the original recognition error.
+  } finally {
+    transcriptStore.finalizeRecording();
+    handleTranscriptChange();
+    sessionTransition = false;
+    renderControls();
+  }
 }
 
 function handleProviderWarning(warning: TranscriptionError): void {
@@ -1237,6 +1270,62 @@ function createMeetingHistoryRepository(): IndexedDbMeetingHistoryRepository | n
   }
 }
 
+function persistActiveMeeting(): void {
+  if (!meetingSettingsSnapshot || !currentMeetingId || appState.meetingEnded || pageUnloading) return;
+  try {
+    saveMeetingDraft(createMeetingRecord({
+      meetingId: currentMeetingId,
+      createdAt: meetingSettingsSnapshot.createdAt,
+      startedAt: meetingStartedAt === null ? null : new Date(meetingStartedAt).toISOString(),
+      endedAt: null,
+      updatedAt: new Date().toISOString(),
+      title: meetingTitle(),
+      settingsSnapshot: meetingSettingsSnapshot,
+      sentences: transcriptStore.snapshot().completedSentences,
+    }));
+  } catch {
+    renderSummaryWarning('会議の途中保存に失敗しました。ページを閉じる前に会議を終了して保存してください。');
+  }
+}
+
+function recoverActiveMeeting(): void {
+  try {
+    const draft = loadMeetingDraft();
+    if (!draft) return;
+    currentMeetingId = draft.meetingId;
+    meetingSettingsSnapshot = draft.settingsSnapshot;
+    meetingStartedAt = draft.startedAt === null ? null : Date.parse(draft.startedAt);
+    meetingHasRecorded = draft.startedAt !== null;
+    elements.meetingTitle.textContent = draft.title ?? draft.settingsSnapshot.title;
+    elements.meetingTitleInput.value = draft.title ?? draft.settingsSnapshot.title;
+    elements.providerSelect.value = draft.settingsSnapshot.transcriptionProvider;
+    elements.languageSelect.value = draft.settingsSnapshot.language;
+    transcriptStore.restoreSentences(draft.transcript.utterances.map((utterance) => ({
+      id: utterance.sentenceId,
+      sessionId: draft.meetingId,
+      rawSegmentIds: utterance.sourceSegmentIds,
+      rawText: utterance.rawText,
+      displayText: utterance.correctedText ?? utterance.rawText,
+      revision: utterance.revision,
+      language: utterance.language,
+      startTime: utterance.startTime,
+      endTime: utterance.endTime,
+      completionReason: 'recording_stopped',
+      ...(utterance.correctedText === null ? {} : { correction: {
+        rawText: utterance.rawText, correctedText: utterance.correctedText,
+        status: 'succeeded' as const, changes: [], uncertainParts: [],
+        sourceSegmentIds: utterance.sourceSegmentIds,
+      } }),
+    })));
+    // Restoring a draft never starts the microphone or external processing.
+    meetingSummaryExternalAllowed = false;
+    appState = { view: 'meeting', meetingStarted: true, meetingEnded: false };
+  } catch {
+    renderSummaryWarning('途中の会議を復元できませんでした。ブラウザーの保存設定を確認してください。');
+  }
+}
+
+recoverActiveMeeting();
 renderProviderDetails();
 renderMeetingSettingsSummary(elements.meetingSettingsSummary, meetingSettingsSnapshot);
 void meetingHistoryListController.load();

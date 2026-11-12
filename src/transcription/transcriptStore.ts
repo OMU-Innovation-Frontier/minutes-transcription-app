@@ -79,6 +79,16 @@ export class TranscriptStore {
     this.revisions.clear();
   }
 
+  restoreSentences(sentences: readonly CompletedSentence[]): void {
+    this.clear();
+    this.completedSentences = structuredClone([...sentences]);
+    this.rawSegments = sentences.map((sentence) => ({
+      id: sentence.id, sessionId: sentence.sessionId, text: sentence.rawText,
+      isFinal: true, startTime: sentence.startTime, endTime: sentence.endTime,
+      language: sentence.language, provider: 'recovered', revision: sentence.revision,
+    }));
+  }
+
   clear(): void {
     this.assembler.clear();
     this.finalSegments = [];
