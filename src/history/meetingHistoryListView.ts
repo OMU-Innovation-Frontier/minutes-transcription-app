@@ -28,16 +28,22 @@ interface MeetingHistoryDisplayItem {
   openDetail?: () => void;
 }
 
+export interface MeetingHistoryPdfAction {
+  onPdf: (meetingId: string) => void;
+  disabled: (meetingId: string) => boolean;
+}
+
 export function renderMeetingHistoryList(
   elements: MeetingHistoryListElements,
   state: MeetingHistoryListState,
   currentMeeting: CurrentPageMeetingHistoryItem | null,
   formatDate: (isoDate: string) => string = formatHistoryDate,
   onOpenPersisted?: (meetingId: string) => void,
+  pdfAction?: MeetingHistoryPdfAction,
 ): void {
   if (state.status === 'disposed') return;
   const items = mergeMeetingHistory(state.records, currentMeeting, onOpenPersisted);
-  elements.list.replaceChildren(...items.map((item) => renderHistoryItem(item, formatDate)));
+  elements.list.replaceChildren(...items.map((item) => renderHistoryItem(item, formatDate, pdfAction)));
   elements.list.hidden = items.length === 0;
   elements.empty.hidden = true;
   elements.status.hidden = true;
@@ -107,6 +113,7 @@ function toDisplayItem(record: MeetingRecord): MeetingHistoryDisplayItem {
 function renderHistoryItem(
   item: MeetingHistoryDisplayItem,
   formatDate: (isoDate: string) => string,
+  pdfAction?: MeetingHistoryPdfAction,
 ): HTMLLIElement {
   const listItem = document.createElement('li');
   listItem.className = 'history-entry';
@@ -132,6 +139,16 @@ function renderHistoryItem(
   storage.textContent = item.persisted ? 'この端末に保存済み' : 'このページ内で保持中';
   surface.append(title, date, utterances, summary, storage);
   listItem.append(surface);
+  if (item.persisted && pdfAction) {
+    const download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'secondary-button';
+    download.textContent = 'PDFとしてダウンロード';
+    download.setAttribute('aria-label', '「' + item.title + '」の最終要約をPDFとしてダウンロード');
+    download.disabled = pdfAction.disabled(item.meetingId);
+    download.addEventListener('click', () => pdfAction.onPdf(item.meetingId));
+    listItem.append(download);
+  }
   return listItem;
 }
 

@@ -1,3 +1,4 @@
+import { downloadMeetingFile, meetingExportFilename } from './history/meetingExport';
 import { createMeetingRecord } from './history/meetingRecord';
 import { loadMeetingDraft, saveMeetingDraft, removeMeetingDraft } from './history/meetingDraft';
 import './styles.css';
@@ -222,6 +223,7 @@ type MeetingDetailSource = { kind: 'current' } | { kind: 'persisted'; meetingId:
 let meetingDetailSource: MeetingDetailSource = null;
 let currentMeetingPersisted = false;
 let pageUnloading = false;
+let historyExportInProgress = false;
 let handledDeleteState: MeetingHistoryDeleteState | null = null;
 let meetingSetupDraft: MeetingSetupDraft = createInitialMeetingSetupDraft();
 let reconnectAttempt = 0;
@@ -958,7 +960,41 @@ function renderHomeState(): void {
     status: elements.homeHistoryStatus,
     statusMessage: elements.homeHistoryStatusMessage,
     retryButton: elements.homeHistoryRetryButton,
-  }, meetingHistoryListController.state, currentPageMeetingHistory(), (value) => formatMeetingDate(Date.parse(value)), openPersistedMeetingDetail);
+  }, meetingHistoryListController.state, currentPageMeetingHistory(), (value) => formatMeetingDate(Date.parse(value)), openPersistedMeetingDetail, {
+    onPdf: (meetingId) => void exportMeetingSummary(meetingId),
+    disabled: () => historyExportInProgress,
+  });
+}
+
+async function exportMeetingSummary(meetingId: string): Promise<void> {
+  if (historyExportInProgress) return;
+  const record = meetingHistoryListController.state.records.find((item) => item.meetingId === meetingId);
+  if (!record) {
+    showHistoryNotification('会議履歴が見つかりません。履歴を再読み込みしてください。', true);
+    return;
+  }
+  if (!record.finalSummary) {
+    showHistoryNotification('最終要約を作成してからPDFを保存してください。', true);
+    return;
+  }
+  historyExportInProgress = true;
+  renderHomeState();
+  showHistoryNotification('PDFを作成しています。', false);
+  try {
+    const { createMeetingPdf } = await import('./history/meetingPdf');
+    const bytes = await createMeetingPdf(record);
+    if (pageUnloading) return;
+    downloadMeetingFile(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }), meetingExportFilename(record, 'pdf'));
+    showHistoryNotification('最終要約PDFのダウンロードを開始しました。', false);
+  } catch {
+    if (!pageUnloading) showHistoryNotification('PDFを作成できませんでした。時間をおいてもう一度お試しください。', true);
+  } finally {
+    historyExportInProgress = false;
+    if (!pageUnloading) {
+      renderHomeState();
+      elements.historyTitle.focus();
+    }
+  }
 }
 
 function currentPageMeetingHistory(): CurrentPageMeetingHistoryItem | null {
