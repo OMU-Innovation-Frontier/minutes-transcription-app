@@ -28,8 +28,10 @@ interface MeetingHistoryDisplayItem {
   openDetail?: () => void;
 }
 
-export interface MeetingHistoryPdfAction {
-  onPdf: (meetingId: string) => void;
+export interface MeetingHistoryActions {
+  onDelete: (meetingId: string, title: string, button: HTMLButtonElement) => void;
+  onPdf?: (meetingId: string) => void;
+  onShare?: (meetingId: string) => void;
   disabled: (meetingId: string) => boolean;
 }
 
@@ -39,11 +41,11 @@ export function renderMeetingHistoryList(
   currentMeeting: CurrentPageMeetingHistoryItem | null,
   formatDate: (isoDate: string) => string = formatHistoryDate,
   onOpenPersisted?: (meetingId: string) => void,
-  pdfAction?: MeetingHistoryPdfAction,
+  deletion?: MeetingHistoryActions,
 ): void {
   if (state.status === 'disposed') return;
   const items = mergeMeetingHistory(state.records, currentMeeting, onOpenPersisted);
-  elements.list.replaceChildren(...items.map((item) => renderHistoryItem(item, formatDate, pdfAction)));
+  elements.list.replaceChildren(...items.map((item) => renderHistoryItem(item, formatDate, deletion)));
   elements.list.hidden = items.length === 0;
   elements.empty.hidden = true;
   elements.status.hidden = true;
@@ -113,7 +115,7 @@ function toDisplayItem(record: MeetingRecord): MeetingHistoryDisplayItem {
 function renderHistoryItem(
   item: MeetingHistoryDisplayItem,
   formatDate: (isoDate: string) => string,
-  pdfAction?: MeetingHistoryPdfAction,
+  deletion?: MeetingHistoryActions,
 ): HTMLLIElement {
   const listItem = document.createElement('li');
   listItem.className = 'history-entry';
@@ -139,15 +141,46 @@ function renderHistoryItem(
   storage.textContent = item.persisted ? 'この端末に保存済み' : 'このページ内で保持中';
   surface.append(title, date, utterances, summary, storage);
   listItem.append(surface);
-  if (item.persisted && pdfAction) {
-    const download = document.createElement('button');
-    download.type = 'button';
-    download.className = 'secondary-button';
-    download.textContent = 'PDFとしてダウンロード';
-    download.setAttribute('aria-label', '「' + item.title + '」の最終要約をPDFとしてダウンロード');
-    download.disabled = pdfAction.disabled(item.meetingId);
-    download.addEventListener('click', () => pdfAction.onPdf(item.meetingId));
-    listItem.append(download);
+  if (item.persisted && deletion) {
+    const actions = document.createElement('details');
+    actions.className = 'history-entry__actions';
+    const trigger = document.createElement('summary');
+    trigger.textContent = '…';
+    trigger.setAttribute('aria-label', `「${item.title}」のその他の操作`);
+    const panel = document.createElement('div');
+    panel.className = 'history-entry__menu';
+    actions.append(trigger, panel);
+    actions.addEventListener('toggle', () => {
+      if (!actions.open) return;
+      for (const other of listItem.parentElement?.querySelectorAll<HTMLDetailsElement>('.history-entry__actions') ?? []) {
+        if (other !== actions) other.open = false;
+      }
+    });
+    actions.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      actions.open = false;
+      trigger.focus();
+    });
+    for (const [label, callback] of [['PDFとしてダウンロード', deletion.onPdf], ['共有', deletion.onShare]] as const) {
+      if (!callback) continue;
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.textContent = label;
+      option.disabled = deletion.disabled(item.meetingId);
+      option.addEventListener('click', () => { actions.open = false; callback(item.meetingId); });
+      panel.append(option);
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'history-entry__delete';
+    button.textContent = '削除';
+    button.setAttribute('aria-label', `「${item.title}」を削除`);
+    button.disabled = deletion.disabled(item.meetingId);
+    button.addEventListener('click', () => { actions.open = false; deletion.onDelete(item.meetingId, item.title, button); });
+    panel.append(button);
+    listItem.append(actions);
   }
   return listItem;
 }
