@@ -1,7 +1,7 @@
-import { downloadMeetingFile, meetingExportFilename } from './history/meetingExport';
 import { createMeetingRecord } from './history/meetingRecord';
 import { loadMeetingDraft, saveMeetingDraft, removeMeetingDraft } from './history/meetingDraft';
 import './styles.css';
+import { downloadMeetingFile, meetingExportFilename, shareMeeting } from './history/meetingExport';
 import type { LiveMeetingSummary, MeetingUsageSummary } from '../shared/summary';
 import type { CorrectionServiceStatus } from '../shared/correction';
 import { AudioCapture } from './audio/audioCapture';
@@ -226,8 +226,9 @@ type MeetingDetailSource = { kind: 'current' } | { kind: 'persisted'; meetingId:
 let meetingDetailSource: MeetingDetailSource = null;
 let currentMeetingPersisted = false;
 let pageUnloading = false;
-let historyExportInProgress = false;
 let handledDeleteState: MeetingHistoryDeleteState | null = null;
+let homeDeleteTarget: { meetingId: string; button: HTMLButtonElement } | null = null;
+let historyExportInProgress = false;
 let meetingSetupDraft: MeetingSetupDraft = createInitialMeetingSetupDraft();
 let reconnectAttempt = 0;
 let reconnectMaxAttempts = 0;
@@ -307,7 +308,10 @@ elements.detailHomeButton.addEventListener('click', returnHomeFromDetail);
 elements.detailHistoryRetryButton.addEventListener('click', () => void meetingHistoryDetailController.retry());
 elements.deleteMeetingHistoryButton.addEventListener('click', openDeleteMeetingHistoryDialog);
 elements.cancelDeleteMeetingHistoryButton.addEventListener('click', cancelDeleteMeetingHistory);
-elements.confirmDeleteMeetingHistoryButton.addEventListener('click', () => void meetingHistoryDeleteController.delete());
+elements.confirmDeleteMeetingHistoryButton.addEventListener('click', () => {
+  if (meetingHistoryDeleteController.state.status === 'failed') retryDeleteMeetingHistory();
+  else void meetingHistoryDeleteController.delete();
+});
 elements.retryDeleteMeetingHistoryButton.addEventListener('click', retryDeleteMeetingHistory);
 elements.homeSettingsButton.addEventListener('click', openSettings);
 elements.meetingSettingsButton.addEventListener('click', openSettings);
@@ -1010,40 +1014,57 @@ function renderHomeState(): void {
     statusMessage: elements.homeHistoryStatusMessage,
     retryButton: elements.homeHistoryRetryButton,
   }, meetingHistoryListController.state, currentPageMeetingHistory(), (value) => formatMeetingDate(Date.parse(value)), openPersistedMeetingDetail, {
-    onPdf: (meetingId) => void exportMeetingSummary(meetingId),
-    disabled: () => historyExportInProgress,
+    onDelete: openHomeDeleteMeetingHistoryDialog,
+    onPdf: (meetingId) => void exportMeetingFromHome(meetingId, 'pdf'),
+    onShare: (meetingId) => void exportMeetingFromHome(meetingId, 'share'),
+    disabled: (meetingId) => meetingHistoryDeleteController.state.status === 'deleting'
+      || historyExportInProgress
+      || (meetingId === currentMeetingId && sessionTransition),
   });
 }
 
-async function exportMeetingSummary(meetingId: string): Promise<void> {
-  if (historyExportInProgress) return;
+async function exportMeetingFromHome(meetingId: string, mode: 'pdf' | 'share'): Promise<void> {
+  if (historyExportInProgress || meetingHistoryDeleteController.state.status === 'deleting') return;
   const record = meetingHistoryListController.state.records.find((item) => item.meetingId === meetingId);
-  if (!record) {
-    showHistoryNotification('会議履歴が見つかりません。履歴を再読み込みしてください。', true);
-    return;
-  }
-  if (!record.finalSummary) {
+  if (!record) { showHistoryNotification('会議履歴が見つかりません。履歴を再読み込みしてください。', true); return; }
+  if (mode === 'pdf' && !record.finalSummary) {
     showHistoryNotification('最終要約を作成してからPDFを保存してください。', true);
     return;
   }
   historyExportInProgress = true;
   renderHomeState();
-  showHistoryNotification('PDFを作成しています。', false);
   try {
-    const { createMeetingPdf } = await import('./history/meetingPdf');
-    const bytes = await createMeetingPdf(record);
-    if (pageUnloading) return;
-    downloadMeetingFile(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }), meetingExportFilename(record, 'pdf'));
-    showHistoryNotification('最終要約PDFのダウンロードを開始しました。', false);
+    if (mode === 'share') {
+      const result = await shareMeeting(record);
+      if (!pageUnloading) showHistoryNotification(result === 'downloaded'
+        ? '共有用テキストをダウンロードしました。送りたい相手に添付してください。'
+        : result === 'cancelled' ? '共有をキャンセルしました。' : '共有先への受け渡しが完了しました。', false);
+    } else {
+      showHistoryNotification('PDFを作成しています。', false);
+      const { createMeetingPdf } = await import('./history/meetingPdf');
+      const bytes = await createMeetingPdf(record);
+      if (pageUnloading) return;
+      downloadMeetingFile(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }), meetingExportFilename(record, 'pdf'));
+      showHistoryNotification('PDFのダウンロードを開始しました。', false);
+    }
   } catch {
-    if (!pageUnloading) showHistoryNotification('PDFを作成できませんでした。時間をおいてもう一度お試しください。', true);
+    if (!pageUnloading) showHistoryNotification(mode === 'pdf'
+      ? 'PDFを作成できませんでした。時間をおいてもう一度お試しください。'
+      : '共有できませんでした。PDFをダウンロードして添付することもできます。', true);
   } finally {
     historyExportInProgress = false;
-    if (!pageUnloading) {
-      renderHomeState();
-      elements.historyTitle.focus();
-    }
+    if (!pageUnloading) { renderHomeState(); elements.historyTitle.focus(); }
   }
+}
+
+function openHomeDeleteMeetingHistoryDialog(meetingId: string, title: string, button: HTMLButtonElement): void {
+  if (!elements.endMeetingDialog.hidden || meetingHistoryDeleteController.state.status === 'deleting') return;
+  if (meetingId === currentMeetingId && sessionTransition) return;
+  if (!meetingHistoryListController.state.records.some((record) => record.meetingId === meetingId)) return;
+  homeDeleteTarget = { meetingId, button };
+  hideHistoryNotification();
+  if (!meetingHistoryDeleteController.confirm(meetingId, title)) { homeDeleteTarget = null; return; }
+  elements.cancelDeleteMeetingHistoryButton.focus();
 }
 
 function currentPageMeetingHistory(): CurrentPageMeetingHistoryItem | null {
@@ -1102,12 +1123,13 @@ function renderMeetingHistoryDeleteState(): void {
     cancelButton: elements.cancelDeleteMeetingHistoryButton,
     confirmButton: elements.confirmDeleteMeetingHistoryButton,
   }, meetingHistoryDetailController.state, meetingHistoryDeleteController.state,
-  meetingDetailSource?.kind === 'persisted');
+  meetingDetailSource?.kind === 'persisted', homeDeleteTarget ?? undefined);
 }
 
 function openDeleteMeetingHistoryDialog(): void {
   if (!elements.endMeetingDialog.hidden) return;
   if (meetingDetailSource?.kind !== 'persisted') return;
+  homeDeleteTarget = null;
   const detailState = meetingHistoryDetailController.state;
   if (detailState.status !== 'ready' || detailState.record.meetingId !== meetingDetailSource.meetingId) return;
   hideHistoryNotification();
@@ -1119,9 +1141,12 @@ function openDeleteMeetingHistoryDialog(): void {
 }
 
 function cancelDeleteMeetingHistory(): void {
-  if (meetingHistoryDeleteController.state.status !== 'confirming') return;
+  if (!['confirming', 'failed'].includes(meetingHistoryDeleteController.state.status)) return;
+  const homeTarget = homeDeleteTarget;
+  homeDeleteTarget = null;
   meetingHistoryDeleteController.cancel();
-  elements.deleteMeetingHistoryButton.focus();
+  if (homeTarget) elements.historyTitle.focus();
+  else elements.deleteMeetingHistoryButton.focus();
 }
 
 function retryDeleteMeetingHistory(): void {
@@ -1132,7 +1157,9 @@ function retryDeleteMeetingHistory(): void {
 
 function handleMeetingHistoryDeleteChange(state: MeetingHistoryDeleteState): void {
   renderMeetingHistoryDeleteState();
-  if (state.status === 'failed') elements.retryDeleteMeetingHistoryButton.focus();
+  renderHomeState();
+  if (state.status === 'failed' && homeDeleteTarget) elements.confirmDeleteMeetingHistoryButton.focus();
+  else if (state.status === 'failed') elements.retryDeleteMeetingHistoryButton.focus();
   if ((state.status === 'deleted' || state.status === 'not_found') && handledDeleteState !== state) {
     handledDeleteState = state;
     void finalizeMeetingHistoryDelete(state);
@@ -1143,7 +1170,14 @@ async function finalizeMeetingHistoryDelete(
   state: Extract<MeetingHistoryDeleteState, { status: 'deleted' | 'not_found' }>,
 ): Promise<void> {
   if (pageUnloading) return;
-  if (meetingDetailSource?.kind !== 'persisted' || meetingDetailSource.meetingId !== state.meetingId) return;
+  const fromHome = homeDeleteTarget?.meetingId === state.meetingId;
+  if (!fromHome && (meetingDetailSource?.kind !== 'persisted' || meetingDetailSource.meetingId !== state.meetingId)) return;
+  homeDeleteTarget = null;
+  if (endedMeetingSnapshot?.meetingId === state.meetingId) {
+    endedMeetingSnapshot = null;
+    currentMeetingPersisted = false;
+    meetingHistoryPersistence.reset();
+  }
 
   meetingHistoryDetailController.clear();
   meetingDetailSource = null;

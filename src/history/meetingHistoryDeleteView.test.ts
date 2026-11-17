@@ -18,6 +18,26 @@ describe('meeting history delete view', () => {
     elements = createElements();
   });
 
+  it('confirms a home-list deletion without loading a detail', () => {
+    renderMeetingHistoryDelete(elements, { status: 'idle' }, {
+      status: 'confirming', meetingId: 'meeting-1', title: '<b>架空の会議</b>',
+    }, false, { meetingId: 'meeting-1' });
+    expect(elements.actions.hidden).toBe(true);
+    expect(elements.dialog.hidden).toBe(false);
+    expect(elements.dialogTargetTitle.textContent).toBe('<b>架空の会議</b>');
+    expect(elements.dialogTargetTitle.querySelector('b')).toBeNull();
+  });
+
+  it('keeps home delete failure visible with retry and cancel controls', () => {
+    renderMeetingHistoryDelete(elements, { status: 'idle' }, {
+      status: 'failed', meetingId: 'meeting-1', title: '架空の会議',
+    }, false, { meetingId: 'meeting-1' });
+    expect(elements.dialog.hidden).toBe(false);
+    expect(elements.dialogProgress.hidden).toBe(false);
+    expect(elements.confirmButton.textContent).toBe('削除を再試行');
+    expect(elements.cancelButton.disabled).toBe(false);
+  });
+
   it('shows the delete area only for a selected persisted ready detail', () => {
     renderMeetingHistoryDelete(elements, readyDetail(), { status: 'idle' }, true);
     expect(elements.actions.hidden).toBe(false);

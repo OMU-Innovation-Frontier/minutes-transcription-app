@@ -27,6 +27,58 @@ describe('meeting history list view', () => {
     elements = { list, empty, status, statusMessage, retryButton };
   });
 
+  it('deletes from a separate button without opening details', () => {
+    const open = vi.fn();
+    const remove = vi.fn();
+    renderMeetingHistoryList(elements, ready([recordFixture('meeting-1', { title: '削除対象' })]), null,
+      () => '日時', open, { onDelete: remove, disabled: () => false });
+    const button = elements.list.querySelector<HTMLButtonElement>('.history-entry__delete');
+    expect(button?.getAttribute('aria-label')).toBe('「削除対象」を削除');
+    expect(button?.closest('.history-entry__surface')).toBeNull();
+    const menu = button?.closest('details');
+    expect(menu?.open).toBe(false);
+    if (menu) menu.open = true;
+    button?.click();
+    expect(remove).toHaveBeenCalledWith('meeting-1', '削除対象', button);
+    expect(open).not.toHaveBeenCalled();
+    expect(menu?.open).toBe(false);
+  });
+
+  it('groups PDF, sharing, and deletion under an accessible more-actions menu', () => {
+    const pdf = vi.fn();
+    const share = vi.fn();
+    const open = vi.fn();
+    renderMeetingHistoryList(elements, ready([recordFixture('meeting-1')]), null,
+      () => '日時', open, { onDelete: vi.fn(), onPdf: pdf, onShare: share, disabled: () => false });
+    const menu = elements.list.querySelector('details');
+    const trigger = menu?.querySelector('summary');
+    expect(trigger?.textContent).toBe('…');
+    expect(trigger?.getAttribute('aria-label')).toContain('その他の操作');
+    const buttons = [...(menu?.querySelectorAll('button') ?? [])];
+    expect(buttons.map((button) => button.textContent)).toEqual(['PDFとしてダウンロード', '共有', '削除']);
+    if (menu) menu.open = true;
+    buttons[0]?.click();
+    expect(pdf).toHaveBeenCalledWith('meeting-1');
+    expect(menu?.open).toBe(false);
+    buttons[1]?.click();
+    expect(share).toHaveBeenCalledWith('meeting-1');
+    expect(open).not.toHaveBeenCalled();
+    if (menu) menu.open = true;
+    menu?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(menu?.open).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('prevents repeated deletes while an operation is in progress', () => {
+    const remove = vi.fn();
+    renderMeetingHistoryList(elements, ready([recordFixture('meeting-1')]), null,
+      () => '日時', undefined, { onDelete: remove, disabled: () => true });
+    const button = elements.list.querySelector<HTMLButtonElement>('.history-entry__delete');
+    expect(button?.disabled).toBe(true);
+    button?.click();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it('renders persisted metadata in repository order without exposing transcript, TODO, IDs, or schema', () => {
     const records = [
       recordFixture('meeting-2', { title: '新しい会議', utteranceCount: 2, withSummary: true }),

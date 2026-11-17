@@ -43,7 +43,7 @@ export class MeetingHistoryDeleteController {
   }
 
   cancel(): void {
-    if (this.disposed || this.stateValue.status !== 'confirming') return;
+    if (this.disposed || (this.stateValue.status !== 'confirming' && this.stateValue.status !== 'failed')) return;
     this.beginNewGeneration();
     this.updateState({ status: 'idle' });
   }

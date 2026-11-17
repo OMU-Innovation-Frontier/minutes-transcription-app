@@ -18,21 +18,31 @@ export function renderMeetingHistoryDelete(
   detailState: MeetingHistoryDetailState,
   deleteState: MeetingHistoryDeleteState,
   persistedDetailSelected: boolean,
+  homeTarget?: { meetingId: string },
 ): void {
   if (deleteState.status === 'disposed') return;
   reset(elements);
 
-  const detailReady = persistedDetailSelected && detailState.status === 'ready';
-  const targetMatches = detailReady && stateMeetingId(deleteState) === detailState.record.meetingId;
+  const targetId = homeTarget?.meetingId ?? (persistedDetailSelected && detailState.status === 'ready' ? detailState.record.meetingId : null);
+  const detailReady = targetId !== null;
+  const targetMatches = detailReady && stateMeetingId(deleteState) === targetId;
   const canShowActions = detailReady
     && deleteState.status !== 'unavailable'
     && deleteState.status !== 'deleted'
     && deleteState.status !== 'not_found'
     && (deleteState.status === 'idle' || targetMatches);
-  setHidden(elements.actions, !canShowActions);
+  setHidden(elements.actions, !canShowActions || Boolean(homeTarget));
   if (!canShowActions) return;
 
   if (deleteState.status === 'failed') {
+    if (homeTarget) {
+      elements.dialogTargetTitle.textContent = deleteState.title;
+      elements.dialogProgress.textContent = '削除できませんでした。もう一度お試しください。';
+      setHidden(elements.dialogProgress, false);
+      elements.confirmButton.textContent = '削除を再試行';
+      setHidden(elements.dialog, false);
+      return;
+    }
     elements.status.textContent = '会議履歴を削除できませんでした。時間をおいてもう一度お試しください。';
     setHidden(elements.status, false);
     setHidden(elements.deleteButton, true);
@@ -62,7 +72,7 @@ export function handleMeetingHistoryDeleteDialogKeydown(
 ): boolean {
   if (elements.dialog.hidden) return false;
   if (event.key === 'Tab') trapDialogFocus(elements, event);
-  if (event.key === 'Escape' && state.status === 'confirming') {
+  if (event.key === 'Escape' && (state.status === 'confirming' || state.status === 'failed')) {
     event.preventDefault();
     cancel();
   }
