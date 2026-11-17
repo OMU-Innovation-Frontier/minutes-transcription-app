@@ -987,6 +987,7 @@ function setAppState(next: AppViewState): void {
     meetingDetail: elements.meetingDetailView,
   });
   renderHomeState();
+  renderControls();
   if (appState.view === 'meeting-detail') renderDetailView();
 }
 
