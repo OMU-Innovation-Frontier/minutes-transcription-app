@@ -102,6 +102,7 @@ export class IncrementalSummaryCoordinator {
     private readonly batchSize: number,
     private readonly callbacks: SummaryCoordinatorCallbacks = {},
     private readonly allowExternalTransmission = false,
+    private readonly automatic = true,
   ) {}
 
   async initialize(): Promise<void> {
@@ -127,35 +128,49 @@ export class IncrementalSummaryCoordinator {
   }
 
   add(sentences: readonly CompletedSentence[]): void {
+    if (this.disposed) return;
     for (const sentence of sentences) {
       if (this.sentIds.has(sentence.id) || this.pending.some((item) => item.id === sentence.id)) continue;
       this.pending.push(toSummarySentence(sentence));
     }
-    if (!this.statusValue.enabled || this.pending.length === 0) return;
+    if (!this.automatic || !this.statusValue.enabled || this.pending.length === 0) return;
     if (this.pending.length >= this.batchSize) void this.flushLive();
     else this.schedule();
   }
 
+  get busy(): boolean { return this.inFlight !== null; }
+
+  hasNewSentences(sentences: readonly CompletedSentence[]): boolean {
+    return sentences.some((sentence) => !this.sentIds.has(sentence.id));
+  }
+
+  async waitForLive(): Promise<void> { await this.inFlight; }
+
   async flushLive(): Promise<void> {
-    if (!this.statusValue.enabled || this.pending.length === 0) return;
+    if (this.disposed || this.pending.length === 0) return;
+    const generation = this.generation;
     if (this.inFlight) return this.inFlight;
     window.clearTimeout(this.timer);
     this.timer = undefined;
     const batch = [...this.pending];
     this.inFlight = (async () => {
       try {
+        await this.initialize();
+        if (!this.isCurrent(generation) || !this.statusValue.enabled) return;
         const result = await this.client.update(this.meetingId, this.liveSummary, batch);
+        if (!this.isCurrent(generation)) return;
         if (result.version <= (this.liveSummary?.version ?? 0)) throw new Error('古い要約versionを拒否しました。');
         this.liveSummary = result;
         for (const sentence of batch) this.sentIds.add(sentence.id);
         this.pending = this.pending.filter((sentence) => !this.sentIds.has(sentence.id));
         this.callbacks.onLiveSummary?.(result);
-        this.callbacks.onUsage?.(await this.client.usage(this.meetingId));
+        const usage = await this.client.usage(this.meetingId);
+        if (this.isCurrent(generation)) this.callbacks.onUsage?.(usage);
       } catch {
-        this.callbacks.onError?.(safeSummaryError('live'));
+        if (this.isCurrent(generation)) this.callbacks.onError?.(safeSummaryError('live'));
       } finally {
         this.inFlight = null;
-        if (this.pending.length > 0) this.schedule();
+        if (this.isCurrent(generation) && this.automatic && this.pending.length > 0) this.schedule();
       }
     })();
     return this.inFlight;

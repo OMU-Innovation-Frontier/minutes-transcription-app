@@ -406,3 +406,61 @@ describe('IncrementalSummaryCoordinator', () => {
     coordinator.dispose();
   });
 });
+
+
+describe('manual interim summaries', () => {
+  function harness() {
+    const client = new SummaryHttpClient();
+    vi.spyOn(client, 'status').mockResolvedValue({ enabled: true, provider: 'mock', apiUsed: false, intervalSeconds: 10 });
+    const update = vi.spyOn(client, 'update').mockResolvedValue(live(1));
+    vi.spyOn(client, 'usage').mockResolvedValue({} as MeetingUsageSummary);
+    const onLiveSummary = vi.fn();
+    const onError = vi.fn();
+    const coordinator = new IncrementalSummaryCoordinator(client, 'manual', 1, { onLiveSummary, onError }, false, false);
+    return { coordinator, update, onLiveSummary, onError };
+  }
+
+  it('only sends on request, carries forward the previous summary and excludes sent sentences', async () => {
+    const h = harness();
+    await h.coordinator.initialize();
+    h.coordinator.add([sentence('one')]);
+    expect(h.update).not.toHaveBeenCalled();
+    await h.coordinator.flushLive();
+    expect(h.coordinator.hasNewSentences([sentence('one')])).toBe(false);
+    h.update.mockResolvedValue(live(2));
+    h.coordinator.add([sentence('one'), sentence('two')]);
+    expect(h.update).toHaveBeenCalledTimes(1);
+    await h.coordinator.flushLive();
+    expect(h.update).toHaveBeenLastCalledWith('manual', live(1), [toSummarySentence(sentence('two'))]);
+    h.coordinator.dispose();
+  });
+
+  it('prevents duplicate requests and ignores results after dispose', async () => {
+    const h = harness();
+    let resolve!: (value: LiveMeetingSummary) => void;
+    h.update.mockReturnValue(new Promise((done) => { resolve = done; }));
+    h.coordinator.add([sentence('one')]);
+    const first = h.coordinator.flushLive();
+    const second = h.coordinator.flushLive();
+    await vi.waitFor(() => expect(h.update).toHaveBeenCalledTimes(1));
+    expect(h.coordinator.busy).toBe(true);
+    h.coordinator.dispose();
+    resolve(live(1));
+    await Promise.all([first, second]);
+    expect(h.onLiveSummary).not.toHaveBeenCalled();
+    expect(h.coordinator.busy).toBe(false);
+  });
+
+  it('retains failed sentences for manual retry without automatic requests', async () => {
+    const h = harness();
+    h.update.mockRejectedValueOnce(new Error('synthetic'));
+    h.coordinator.add([sentence('one')]);
+    await h.coordinator.flushLive();
+    expect(h.onError).toHaveBeenCalledTimes(1);
+    expect(h.coordinator.hasNewSentences([sentence('one')])).toBe(true);
+    expect(h.update).toHaveBeenCalledTimes(1);
+    await h.coordinator.flushLive();
+    expect(h.onLiveSummary).toHaveBeenCalledTimes(1);
+    h.coordinator.dispose();
+  });
+});

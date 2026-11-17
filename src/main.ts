@@ -190,6 +190,9 @@ const elements = {
   localWhisperAudioDuration: requiredElement<HTMLElement>('local-whisper-audio-duration'),
   localWhisperProcessingTime: requiredElement<HTMLElement>('local-whisper-processing-time'),
   localWhisperRtf: requiredElement<HTMLElement>('local-whisper-rtf'),
+  summarizeNowButton: requiredElement<HTMLButtonElement>('summarize-now-button'),
+  manualSummaryStatus: requiredElement<HTMLElement>('manual-summary-status'),
+  interimSummaryHistory: requiredElement<HTMLElement>('interim-summary-history'),
   summaryProviderStatus: requiredElement<HTMLElement>('summary-provider-status'),
   summaryWarning: requiredElement<HTMLElement>('summary-warning'),
   summaryEmpty: requiredElement<HTMLElement>('summary-empty'),
@@ -355,6 +358,14 @@ function beginMeeting(): void {
   if (appState.meetingEnded) resetMeetingData();
   clearPersistedMeetingDetail();
   meetingSetupDraft = createInitialMeetingSetupDraft(getDefaultProviderKind());
+  elements.setupTitle.value = meetingSetupDraft.title;
+  elements.setupLanguage.value = meetingSetupDraft.language;
+  elements.setupProvider.value = meetingSetupDraft.transcriptionProvider;
+  elements.setupCorrection.checked = meetingSetupDraft.correctionEnabled;
+  elements.setupLiveSummary.checked = meetingSetupDraft.liveSummaryEnabled;
+  elements.setupFinalSummary.checked = meetingSetupDraft.finalSummaryEnabled;
+  elements.setupExternalAck.checked = false;
+  requiredElement('setup-title-error').textContent = '';
   setupSummaryStatus = null;
   const generation = ++setupSummaryGeneration;
   void summaryClient.status().then((status) => {
@@ -533,7 +544,7 @@ async function pauseSession(): Promise<void> {
   }
   transcriptStore.finalizeRecording();
   handleTranscriptChange();
-  await summaryCoordinator?.flushLive();
+  await summaryCoordinator?.waitForLive();
   if (firstError) renderError(firstError);
   sessionTransition = false;
   renderControls();
@@ -612,7 +623,7 @@ function createFinalSummaryOptions(snapshot: EndedMeetingSnapshot | null = ended
     provider: () => latestSummaryStatus?.provider ?? null,
     finalize: async (sentences) => {
       if (!summaryCoordinator) return null;
-      if (settings?.liveSummaryEnabled) await summaryCoordinator.flushLive();
+      if (settings?.liveSummaryEnabled) await summaryCoordinator.waitForLive();
       return summaryCoordinator.finalize(sentences);
     },
   };
@@ -642,13 +653,40 @@ async function retryFinalMeetingSummary(): Promise<void> {
   }
 }
 
+elements.summarizeNowButton.addEventListener('click', () => void summarizeNow());
+
+function renderManualSummaryControls(): void {
+  const enabled = Boolean(meetingSettingsSnapshot?.liveSummaryEnabled);
+  const busy = summaryCoordinator?.busy ?? false;
+  elements.summarizeNowButton.disabled = !enabled || !summaryCoordinator || busy
+    || sessionTransition || appState.meetingEnded
+    || !summaryCoordinator.hasNewSentences(transcriptStore.snapshot().completedSentences);
+  elements.summarizeNowButton.textContent = busy ? '要約を作成中…' : 'ここまでを要約';
+  elements.manualSummaryStatus.textContent = !enabled
+    ? '会議設定で「ボタンで途中要約を作る」を有効にしてください。'
+    : busy ? '要約中も録音・文字起こしは続きます。'
+    : '新しい確定発言を、これまでの要約も踏まえてまとめます。途中要約はこの画面を開いている間残ります。';
+}
+
+async function summarizeNow(): Promise<void> {
+  if (elements.summarizeNowButton.disabled || !summaryCoordinator) return;
+  const coordinator = summaryCoordinator;
+  coordinator.add(transcriptStore.snapshot().completedSentences);
+  elements.summaryWarning.hidden = true;
+  const operation = coordinator.flushLive();
+  renderManualSummaryControls();
+  try { await operation; } finally {
+    if (summaryCoordinator === coordinator && !pageUnloading) renderManualSummaryControls();
+  }
+}
+
 function createSummaryCoordinator(meetingId: string): IncrementalSummaryCoordinator {
   return new IncrementalSummaryCoordinator(summaryClient, meetingId, envNumber('VITE_SUMMARY_SENTENCE_BATCH_SIZE', 3), {
     onStatus: renderSummaryStatus,
     onLiveSummary: renderLiveSummary,
     onUsage: renderUsage,
     onError: (error) => renderSummaryWarning(error.message),
-  }, meetingSummaryExternalAllowed);
+  }, meetingSummaryExternalAllowed, false);
 }
 
 function createCorrectionCoordinator(sessionId: string): CorrectionCoordinator {
@@ -663,7 +701,7 @@ function handleTranscriptChange(): void {
   const snapshot = transcriptStore.snapshot();
   renderTranscript();
   correctionCoordinator?.add(snapshot.completedSentences);
-  if (meetingSettingsSnapshot?.liveSummaryEnabled) summaryCoordinator?.add(snapshot.completedSentences);
+  renderManualSummaryControls();
 }
 
 function renderCaptureState(state: CaptureState): void {
@@ -716,6 +754,7 @@ function renderConnectionNote(): void {
 }
 
 function renderControls(): void {
+  renderManualSummaryControls();
   const active = captureState !== 'idle';
   elements.startButton.disabled = active || sessionTransition || appState.meetingEnded;
   elements.startButton.textContent = meetingHasRecorded ? '録音を再開' : '録音を開始';
@@ -854,10 +893,19 @@ function renderLiveSummary(summary: LiveMeetingSummary): void {
   replaceList(elements.summaryDecisions, summary.decisions.map((item) => item.text));
   replaceList(elements.summaryActions, summary.actionItems.map((item) => `${item.task}${item.assignee ? `（担当: ${item.assignee}）` : ''}`));
   replaceList(elements.summaryQuestions, summary.openQuestions.map((item) => item.text));
+  const entry = document.createElement('details');
+  const heading = document.createElement('summary');
+  heading.textContent = `途中要約 ${elements.interimSummaryHistory.childElementCount + 1}（${new Date().toLocaleTimeString('ja-JP')}）`;
+  const content = elements.summaryContent.cloneNode(true) as HTMLElement;
+  content.removeAttribute('id');
+  content.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+  entry.append(heading, content);
+  elements.interimSummaryHistory.append(entry);
   renderDetailView();
 }
 
 function resetSummaryView(): void {
+  elements.interimSummaryHistory.replaceChildren();
   elements.summaryEmpty.hidden = false;
   elements.summaryContent.hidden = true;
   elements.summaryTopic.textContent = '';
@@ -947,6 +995,7 @@ function setAppState(next: AppViewState): void {
     meetingDetail: elements.meetingDetailView,
   });
   renderHomeState();
+  renderControls();
   if (appState.view === 'meeting-detail') renderDetailView();
 }
 
