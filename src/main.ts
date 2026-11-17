@@ -358,6 +358,14 @@ function beginMeeting(): void {
   if (appState.meetingEnded) resetMeetingData();
   clearPersistedMeetingDetail();
   meetingSetupDraft = createInitialMeetingSetupDraft(getDefaultProviderKind());
+  elements.setupTitle.value = meetingSetupDraft.title;
+  elements.setupLanguage.value = meetingSetupDraft.language;
+  elements.setupProvider.value = meetingSetupDraft.transcriptionProvider;
+  elements.setupCorrection.checked = meetingSetupDraft.correctionEnabled;
+  elements.setupLiveSummary.checked = meetingSetupDraft.liveSummaryEnabled;
+  elements.setupFinalSummary.checked = meetingSetupDraft.finalSummaryEnabled;
+  elements.setupExternalAck.checked = false;
+  requiredElement('setup-title-error').textContent = '';
   setupSummaryStatus = null;
   const generation = ++setupSummaryGeneration;
   void summaryClient.status().then((status) => {
