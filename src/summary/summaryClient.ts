@@ -1,3 +1,4 @@
+import { serverHttpUrl } from '../serverLocation';
 import {
   validateFinalMeetingSummary,
   validateLiveMeetingSummary,
@@ -26,7 +27,7 @@ export class SummaryHttpClient {
   private readonly request: typeof fetch;
 
   constructor(
-    private readonly baseUrl = import.meta.env.VITE_SERVER_HTTP_URL ?? 'http://127.0.0.1:8787',
+    private readonly baseUrl = serverHttpUrl(),
     request: typeof fetch = window.fetch,
   ) {
     this.request = request.bind(window);
@@ -277,6 +278,9 @@ function safeHttpErrorMessage(value: unknown): string {
   const code = value && typeof value === 'object' && 'code' in value && typeof value.code === 'string'
     ? value.code
     : '';
+  if (code === 'access_required') return '入室の有効期限を確認してください。ページを開き直して合言葉を入力してください。';
+  if (code === 'access_daily_limit') return '今日の利用上限に達しました。文字起こし履歴は保持しています。';
+  if (code === 'access_busy') return 'ほかの処理が進行中です。しばらく待ってから再試行してください。';
   if (code === 'summary_provider_changed') return '要約先が変更されています。会議設定を開き直して送信先を確認してください。';
   if (code === 'summary_input_too_large') return '要約対象が長すぎます。文字起こしは保持しています。要約の入力上限と設定を確認してください。';
   if (code === 'summary_rate_limited') return '要約サービスの利用制限に達しました。時間をおいて手動で再試行してください。';

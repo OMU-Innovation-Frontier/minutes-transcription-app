@@ -4,6 +4,7 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
+    "start": "node server/dist/server/src/index.js",
     "dev": "vite --configLoader runner",
     "dev:server": "tsx server/src/index.ts",
     "benchmark:local": "tsx server/src/providers/local/benchmarkCli.ts",

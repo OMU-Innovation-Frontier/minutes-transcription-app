@@ -1,4 +1,5 @@
 import { encodeAudioFrame, parseServerMessage, ProtocolValidationError } from '../../shared/protocol';
+import { serverWebSocketUrl } from '../serverLocation';
 import { PendingAudioQueue, type AudioBufferSnapshot } from '../audio/pendingAudioQueue';
 import type { AudioChunk } from '../audio/types';
 import type {
@@ -117,7 +118,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
     this.label = this.requestedProvider === 'local-whisper' ? 'Local Whisper small'
       : this.requestedProvider === 'groq-whisper' ? 'Groq Whisper（無料枠）' : 'WebSocketサーバー認識';
     this.audioCaptureMode = this.requestedProvider === 'server-default' ? 'media-recorder' as const : 'pcm16-16khz' as const;
-    this.url = dependencies.url ?? import.meta.env.VITE_TRANSCRIPTION_WEBSOCKET_URL ?? 'ws://localhost:8787/transcription';
+    this.url = dependencies.url ?? serverWebSocketUrl();
     this.createWebSocket = dependencies.createWebSocket ??
       (typeof WebSocket === 'undefined' ? undefined : (url) => new WebSocket(url));
     this.scheduleTimeout = dependencies.setTimeout ?? window.setTimeout.bind(window);

@@ -1,3 +1,4 @@
+import { serverHttpUrl } from '../serverLocation';
 import {
   CORRECTION_MAX_ATTEMPTS,
   CORRECTION_POLICY_VERSION,
@@ -17,7 +18,7 @@ export class CorrectionHttpClient {
   private readonly request: typeof fetch;
 
   constructor(
-    private readonly baseUrl = import.meta.env.VITE_SERVER_HTTP_URL ?? 'http://127.0.0.1:8787',
+    private readonly baseUrl = serverHttpUrl(),
     request: typeof fetch = window.fetch,
   ) {
     this.request = request.bind(window);
