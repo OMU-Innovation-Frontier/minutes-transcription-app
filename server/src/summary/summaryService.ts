@@ -1,3 +1,4 @@
+import { GroqSummaryProvider } from './groqSummaryProvider.js';
 import {
   validateFinalMeetingSummary,
   validateLiveMeetingSummary,
@@ -70,14 +71,14 @@ export class SummaryService {
   }
 
   dispose(): void {
-    if (this.provider instanceof OpenAISummaryProvider) this.provider.dispose();
+    if (this.provider instanceof OpenAISummaryProvider || this.provider instanceof GroqSummaryProvider) this.provider.dispose();
   }
 
-  status(): { enabled: boolean; provider: 'mock' | 'openai'; apiUsed: boolean; intervalSeconds: number } {
+  status(): { enabled: boolean; provider: 'mock' | 'openai' | 'groq'; apiUsed: boolean; intervalSeconds: number } {
     return {
       enabled: this.config.enabled,
       provider: this.config.provider,
-      apiUsed: this.config.enabled && this.config.provider === 'openai',
+      apiUsed: this.config.enabled && this.config.provider !== 'mock',
       intervalSeconds: this.config.intervalSeconds,
     };
   }
@@ -87,7 +88,7 @@ export class SummaryService {
   }
 
   private async checkBudget(meetingId: string, model: string | undefined): Promise<void> {
-    if (this.config.provider !== 'openai') return;
+    if (this.config.provider === 'mock') return;
     const usage = await this.usageStore.meetingSummary(meetingId);
     if (this.config.maxRequestsPerMeeting !== undefined && usage.requestCount >= this.config.maxRequestsPerMeeting) {
       this.throwBudget('会議あたりのAPI呼び出し回数上限に達しました。');
@@ -109,12 +110,12 @@ export class SummaryService {
   }
 
   private async persistProviderUsage(): Promise<void> {
-    if (!(this.provider instanceof OpenAISummaryProvider)) return;
+    if (!(this.provider instanceof OpenAISummaryProvider || this.provider instanceof GroqSummaryProvider)) return;
     for (const usage of this.provider.takeUsage()) {
       const record: ApiUsageRecord = {
         meetingId: usage.meetingId,
         purpose: usage.purpose,
-        provider: 'openai',
+        provider: this.config.provider === 'groq' ? 'groq' : 'openai',
         model: usage.model,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
@@ -139,7 +140,11 @@ export function createSummaryService(config: SummaryConfig): SummaryService {
         timeoutMs: config.timeoutMs,
         maxResponseBytes: config.maxResponseBytes,
       })
-    : new MockSummaryProvider();
+    : config.provider === 'groq' ? new GroqSummaryProvider({
+        apiKey: config.apiKey, liveModel: config.liveModel, finalModel: config.finalModel,
+        maxOutputTokens: config.maxOutputTokens, timeoutMs: config.timeoutMs,
+        maxResponseBytes: config.maxResponseBytes, maxInputBytes: config.groqMaxInputBytes,
+      }) : new MockSummaryProvider();
   return new SummaryService(config, provider, new ApiUsageStore(config.usageFile));
 }
 

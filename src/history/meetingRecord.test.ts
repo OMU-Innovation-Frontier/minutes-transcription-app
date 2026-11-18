@@ -297,3 +297,11 @@ describe('MeetingRecord validation', () => {
     expect(() => deserializeMeetingRecord('{invalid')).toThrow(MeetingRecordValidationError);
   });
 });
+
+
+it('round-trips a Groq final summary, nullable TODO fields and provider identity without a schema migration', () => {
+  const summaryRecord = createFinalMeetingSummaryRecord('meeting-1', finalSummary(), updatedAt, 'groq');
+  const restored = deserializeMeetingRecord(serializeMeetingRecord(record({ finalSummary: summaryRecord, summaryApiUsed: true })));
+  expect(restored.schemaVersion).toBe(1);
+  expect(restored.finalSummary).toMatchObject({ provider: 'groq', apiUsed: true, todos: [{ assignee: null, dueDate: null }] });
+});

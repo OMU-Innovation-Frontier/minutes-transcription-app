@@ -1,3 +1,4 @@
+import { SummaryProviderError } from './summary/summaryProviderCommon.js';
 import { createServer, type IncomingMessage, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer, type RawData } from 'ws';
@@ -52,7 +53,7 @@ export function createTranscriptionServer(options: TranscriptionServerOptions = 
     if (origin && config.allowedOrigins.has(origin)) {
       response.setHeader('access-control-allow-origin', origin);
       response.setHeader('vary', 'Origin');
-      response.setHeader('access-control-allow-headers', 'content-type');
+      response.setHeader('access-control-allow-headers', 'content-type,x-summary-provider');
       response.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS');
     }
     if (request.method === 'OPTIONS') {
@@ -95,6 +96,13 @@ export function createTranscriptionServer(options: TranscriptionServerOptions = 
     if (request.method === 'POST' && (url.pathname === '/api/summary/live' || url.pathname === '/api/summary/final')) {
       if (origin && !config.allowedOrigins.has(origin)) {
         sendJson(response, 403, { code: 'invalid_origin', message: 'この接続元からは要約を実行できません。' });
+        return;
+      }
+      const selectedProvider = summaryService.status().provider;
+      const expectedProvider = request.headers['x-summary-provider'];
+      if ((expectedProvider !== undefined && expectedProvider !== selectedProvider)
+        || (selectedProvider === 'groq' && expectedProvider !== 'groq')) {
+        sendJson(response, 409, { code: 'summary_provider_changed', message: '要約先を会議設定で確認し直してください。' });
         return;
       }
       void readJsonBody(request)
@@ -208,6 +216,14 @@ function sendSummaryError(response: import('node:http').ServerResponse, error: u
   }
   if (error instanceof SummaryServiceError) {
     sendJson(response, error.status, { code: error.code, message: error.message });
+    return;
+  }
+  if (error instanceof SummaryProviderError && error.code === 'summary_input_too_large') {
+    sendJson(response, 413, { code: 'summary_input_too_large', message: '要約対象の文章量が上限を超えています。' });
+    return;
+  }
+  if (error instanceof SummaryProviderError && error.code === 'rate_limited') {
+    sendJson(response, 429, { code: 'summary_rate_limited', message: '要約サービスの利用制限に達しました。' });
     return;
   }
   sendJson(response, 500, { code: 'summary_failed', message: '要約処理に失敗しました。' });

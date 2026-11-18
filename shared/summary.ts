@@ -50,7 +50,7 @@ export interface FinalSummaryInput {
 export interface ApiUsageRecord {
   meetingId: string;
   purpose: 'live_summary' | 'final_summary';
-  provider: 'openai';
+  provider: 'openai' | 'groq';
   model: string;
   inputTokens: number;
   outputTokens: number;

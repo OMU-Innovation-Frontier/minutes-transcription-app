@@ -131,3 +131,14 @@ describe('meeting setup draft and snapshot', () => {
     expect(meetingTranscriptionCatalog.find((option) => option.id === 'websocket')?.externalAcknowledgementRequired).toBe(true);
   });
 });
+
+
+it('discloses Groq as the summary destination and still requires explicit consent', () => {
+  const draft = { ...createInitialMeetingSetupDraft('mock'), finalSummaryEnabled: true };
+  const requirements = { correctionStatusKnown: true, correctionExternalTransmission: false, summaryStatusKnown: true, summaryEnabled: true, summaryExternalTransmission: true, summaryProvider: 'groq' as const };
+  expect(buildExternalProcessingDisclosure(draft, requirements)).toContain('Groqへ送信');
+  expect(buildExternalProcessingDisclosure(draft, requirements)).not.toContain('OpenAIへ送信');
+  expect(buildMeetingSetupSummary(draft, requirements).join(' ')).toContain('Groqへ送信');
+  expect(requiresExternalProcessingAcknowledgement(draft, requirements)).toBe(true);
+  expect(validateMeetingSetupDraft(draft, requirements)).not.toBeNull();
+});

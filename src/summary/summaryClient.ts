@@ -10,7 +10,7 @@ import type { CompletedSentence } from '../transcription/types';
 
 export interface SummaryStatus {
   enabled: boolean;
-  provider: 'mock' | 'openai';
+  provider: 'mock' | 'openai' | 'groq';
   apiUsed: boolean;
   intervalSeconds: number;
 }
@@ -36,12 +36,12 @@ export class SummaryHttpClient {
     return validateSummaryStatus(await this.get('/api/summary/status'));
   }
 
-  async update(meetingId: string, previousSummary: LiveMeetingSummary | null, newSentences: SummarySentence[]): Promise<LiveMeetingSummary> {
-    return validateLiveMeetingSummary(await this.post('/api/summary/live', { meetingId, previousSummary, newSentences }));
+  async update(meetingId: string, previousSummary: LiveMeetingSummary | null, newSentences: SummarySentence[], expectedProvider?: SummaryStatus['provider']): Promise<LiveMeetingSummary> {
+    return validateLiveMeetingSummary(await this.post('/api/summary/live', { meetingId, previousSummary, newSentences }, expectedProvider));
   }
 
-  async finalize(meetingId: string, liveSummary: LiveMeetingSummary | null, sentences: SummarySentence[]): Promise<FinalMeetingSummary> {
-    return validateFinalMeetingSummary(await this.post('/api/summary/final', { meetingId, liveSummary, sentences }));
+  async finalize(meetingId: string, liveSummary: LiveMeetingSummary | null, sentences: SummarySentence[], expectedProvider?: SummaryStatus['provider']): Promise<FinalMeetingSummary> {
+    return validateFinalMeetingSummary(await this.post('/api/summary/final', { meetingId, liveSummary, sentences }, expectedProvider));
   }
 
   usage(meetingId: string): Promise<MeetingUsageSummary> {
@@ -52,10 +52,10 @@ export class SummaryHttpClient {
     return this.parse(await this.request(`${this.baseUrl}${path}`));
   }
 
-  private async post(path: string, body: unknown): Promise<unknown> {
+  private async post(path: string, body: unknown, expectedProvider?: SummaryStatus['provider']): Promise<unknown> {
     return this.parse(await this.request(`${this.baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(expectedProvider ? { 'x-summary-provider': expectedProvider } : {}) },
       body: JSON.stringify(body),
     }));
   }
@@ -68,7 +68,7 @@ export class SummaryHttpClient {
       throw new Error('要約サービスから有効な応答を受信できませんでした。');
     }
     if (!response.ok) {
-      throw new Error(safeHttpErrorMessage(value));
+      throw new SummaryRequestError(safeHttpErrorMessage(value));
     }
     return value;
   }
@@ -103,6 +103,7 @@ export class IncrementalSummaryCoordinator {
     private readonly callbacks: SummaryCoordinatorCallbacks = {},
     private readonly allowExternalTransmission = false,
     private readonly automatic = true,
+    private readonly expectedExternalProvider?: SummaryStatus['provider'],
   ) {}
 
   async initialize(): Promise<void> {
@@ -113,6 +114,7 @@ export class IncrementalSummaryCoordinator {
       try {
         const status = await this.client.status();
         if (!this.isCurrent(generation)) return;
+        if (status.apiUsed && this.expectedExternalProvider && status.provider !== this.expectedExternalProvider) throw new Error('要約先が変更されています。会議設定を確認してください。');
         if (status.apiUsed && !this.allowExternalTransmission) throw new Error('外部要約への同意がありません。');
         this.statusValue = status;
         this.statusLoaded = true;
@@ -157,7 +159,7 @@ export class IncrementalSummaryCoordinator {
       try {
         await this.initialize();
         if (!this.isCurrent(generation) || !this.statusValue.enabled) return;
-        const result = await this.client.update(this.meetingId, this.liveSummary, batch);
+        const result = await this.client.update(this.meetingId, this.liveSummary, batch, this.statusValue.provider);
         if (!this.isCurrent(generation)) return;
         if (result.version <= (this.liveSummary?.version ?? 0)) throw new Error('古い要約versionを拒否しました。');
         this.liveSummary = result;
@@ -166,8 +168,8 @@ export class IncrementalSummaryCoordinator {
         this.callbacks.onLiveSummary?.(result);
         const usage = await this.client.usage(this.meetingId);
         if (this.isCurrent(generation)) this.callbacks.onUsage?.(usage);
-      } catch {
-        if (this.isCurrent(generation)) this.callbacks.onError?.(safeSummaryError('live'));
+      } catch (error) {
+        if (this.isCurrent(generation)) this.callbacks.onError?.(error instanceof SummaryRequestError ? error : safeSummaryError('live'));
       } finally {
         this.inFlight = null;
         if (this.isCurrent(generation) && this.automatic && this.pending.length > 0) this.schedule();
@@ -187,7 +189,7 @@ export class IncrementalSummaryCoordinator {
     const finalSentences = toUniqueSummarySentences(sentences);
     const operation = (async (): Promise<SummaryFinalizationResult> => {
       try {
-        const result = await this.client.finalize(this.meetingId, this.liveSummary, finalSentences);
+        const result = await this.client.finalize(this.meetingId, this.liveSummary, finalSentences, this.statusValue.provider);
         if (!this.isCurrent(generation)) return { status: 'failed', reason: 'stale' };
         this.finalSummary = result;
         this.callbacks.onFinalSummary?.(result);
@@ -197,8 +199,8 @@ export class IncrementalSummaryCoordinator {
           if (this.isCurrent(generation)) this.callbacks.onError?.(safeSummaryError('usage'));
         }
         return { status: 'succeeded', summary: result };
-      } catch {
-        if (this.isCurrent(generation)) this.callbacks.onError?.(safeSummaryError('final'));
+      } catch (error) {
+        if (this.isCurrent(generation)) this.callbacks.onError?.(error instanceof SummaryRequestError ? error : safeSummaryError('final'));
         return { status: 'failed', reason: this.isCurrent(generation) ? 'final_api_failed' : 'stale' };
       } finally {
         if (this.isCurrent(generation)) this.finalization = null;
@@ -253,9 +255,9 @@ function validateSummaryStatus(value: unknown): SummaryStatus {
   if (!value || typeof value !== 'object') throw new Error('要約機能の状態を確認できませんでした。');
   const candidate = value as Partial<SummaryStatus>;
   if (typeof candidate.enabled !== 'boolean'
-    || (candidate.provider !== 'mock' && candidate.provider !== 'openai')
+    || (candidate.provider !== 'mock' && candidate.provider !== 'openai' && candidate.provider !== 'groq')
     || typeof candidate.apiUsed !== 'boolean'
-    || candidate.apiUsed !== (candidate.enabled && candidate.provider === 'openai')
+    || candidate.apiUsed !== (candidate.enabled && candidate.provider !== 'mock')
     || typeof candidate.intervalSeconds !== 'number'
     || !Number.isFinite(candidate.intervalSeconds)
     || candidate.intervalSeconds <= 0) {
@@ -269,10 +271,15 @@ function validateSummaryStatus(value: unknown): SummaryStatus {
   };
 }
 
+class SummaryRequestError extends Error {}
+
 function safeHttpErrorMessage(value: unknown): string {
   const code = value && typeof value === 'object' && 'code' in value && typeof value.code === 'string'
     ? value.code
     : '';
+  if (code === 'summary_provider_changed') return '要約先が変更されています。会議設定を開き直して送信先を確認してください。';
+  if (code === 'summary_input_too_large') return '要約対象が長すぎます。文字起こしは保持しています。要約の入力上限と設定を確認してください。';
+  if (code === 'summary_rate_limited') return '要約サービスの利用制限に達しました。時間をおいて手動で再試行してください。';
   if (code === 'summary_disabled') return '要約機能は現在無効です。';
   if (code === 'invalid_request') return '要約に必要な情報を確認できませんでした。';
   if (code === 'budget_exceeded') return '要約処理を現在実行できません。';
