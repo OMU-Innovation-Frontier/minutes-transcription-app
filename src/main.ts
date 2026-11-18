@@ -81,6 +81,8 @@ function requiredElement<T extends HTMLElement>(id: string): T {
 }
 
 const elements = {
+  accessLogoutForm: requiredElement<HTMLFormElement>('access-logout-form'),
+  accessLogoutButton: requiredElement<HTMLButtonElement>('access-logout-button'),
   homeView: requiredElement<HTMLElement>('home-view'),
   meetingSetupView: requiredElement<HTMLElement>('meeting-setup-view'),
   meetingView: requiredElement<HTMLElement>('meeting-view'),
@@ -758,6 +760,7 @@ function renderConnectionNote(): void {
 }
 
 function renderControls(): void {
+  elements.accessLogoutButton.disabled = appState.meetingStarted && !appState.meetingEnded;
   renderManualSummaryControls();
   const active = captureState !== 'idle';
   elements.startButton.disabled = active || sessionTransition || appState.meetingEnded;
@@ -1446,6 +1449,18 @@ function recoverActiveMeeting(): void {
 }
 
 recoverActiveMeeting();
+if (import.meta.env.PROD) {
+  void fetch('/auth/session').then(async response => {
+    if (!response.ok || pageUnloading) return;
+    const state: unknown = await response.json();
+    if (!state || typeof state !== 'object' || !('expiresAt' in state) || typeof state.expiresAt !== 'number' || pageUnloading) return;
+    elements.accessLogoutForm.hidden = false;
+    renderControls();
+  }).catch(() => undefined);
+}
+elements.accessLogoutForm.addEventListener('submit', event => {
+  if (appState.meetingStarted && !appState.meetingEnded) event.preventDefault();
+});
 renderProviderDetails();
 renderMeetingSettingsSummary(elements.meetingSettingsSummary, meetingSettingsSnapshot);
 void meetingHistoryListController.load();

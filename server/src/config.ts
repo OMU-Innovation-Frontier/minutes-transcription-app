@@ -71,7 +71,7 @@ export interface ServerConfig {
 export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   return {
     host: env.STT_HOST || '127.0.0.1',
-    port: readInteger(env.STT_PORT, 8787, 0, 65_535),
+    port: readInteger(env.STT_PORT ?? env.PORT, 8787, 0, 65_535),
     websocketPath: normalizePath(env.STT_WEBSOCKET_PATH || '/transcription'),
     allowedOrigins: new Set(
       (env.STT_ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')

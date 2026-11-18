@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: minutes-pilot
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm run build
+    startCommand: pnpm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: PNPM_VERSION
+        value: 11.9.0
+      - key: STT_HOST
+        value: 0.0.0.0
+      - key: APP_ACCESS_ENABLED
+        value: 'true'
+      - key: APP_ACCESS_PASSPHRASE
+        sync: false
+      - key: APP_QUOTA_BACKEND
+        value: supabase
+      - key: APP_QUOTA_SUPABASE_URL
+        sync: false
+      - key: APP_QUOTA_SUPABASE_SECRET_KEY
+        sync: false
+      - key: VITE_TRANSCRIPTION_PROVIDER
+        value: groq-whisper
+      - key: STT_PROVIDER
+        value: groq-whisper
+      - key: STT_EXTERNAL_ENABLED
+        value: 'true'
+      - key: GROQ_API_KEY
+        sync: false
+      - key: LOCAL_STT_ENABLED
+        value: 'false'
+      - key: LOCAL_STT_DEBUG_AUDIO
+        value: 'false'
+      - key: SUMMARY_ENABLED
+        value: 'true'
+      - key: SUMMARY_PROVIDER
+        value: groq
+      - key: GROQ_SUMMARY_API_KEY
+        sync: false
+      - key: SUMMARY_MAX_REQUESTS_PER_MEETING
+        value: '5'
+      - key: LLM_CORRECTION_ENABLED
+        value: 'false'
