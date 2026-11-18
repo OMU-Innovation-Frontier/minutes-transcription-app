@@ -2,7 +2,8 @@ export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | '
 
 export interface SummaryConfig {
   enabled: boolean;
-  provider: 'mock' | 'openai';
+  provider: 'mock' | 'openai' | 'groq';
+  groqMaxInputBytes?: number;
   apiKey?: string;
   liveModel?: string;
   finalModel?: string;
@@ -21,24 +22,26 @@ export interface SummaryConfig {
 }
 
 export function loadSummaryConfig(env: NodeJS.ProcessEnv = process.env): SummaryConfig {
+  const groq = env.SUMMARY_PROVIDER === 'groq';
   return {
+    groqMaxInputBytes: readOptionalPositiveInteger(env.GROQ_SUMMARY_MAX_INPUT_BYTES) ?? 12_000,
     enabled: readBoolean(env.SUMMARY_ENABLED, false),
-    provider: env.SUMMARY_PROVIDER === 'openai' ? 'openai' : 'mock',
-    apiKey: env.OPENAI_API_KEY || undefined,
-    liveModel: env.OPENAI_LIVE_SUMMARY_MODEL || undefined,
-    finalModel: env.OPENAI_FINAL_SUMMARY_MODEL || undefined,
+    provider: groq ? 'groq' : env.SUMMARY_PROVIDER === 'openai' ? 'openai' : 'mock',
+    apiKey: (groq ? env.GROQ_SUMMARY_API_KEY : env.OPENAI_API_KEY) || undefined,
+    liveModel: groq ? (env.GROQ_SUMMARY_MODEL || 'openai/gpt-oss-20b') : env.OPENAI_LIVE_SUMMARY_MODEL || undefined,
+    finalModel: groq ? (env.GROQ_SUMMARY_MODEL || 'openai/gpt-oss-20b') : env.OPENAI_FINAL_SUMMARY_MODEL || undefined,
     liveReasoningEffort: readEffort(env.OPENAI_LIVE_REASONING_EFFORT, 'low'),
     finalReasoningEffort: readEffort(env.OPENAI_FINAL_REASONING_EFFORT, 'medium'),
-    maxOutputTokens: readOptionalPositiveInteger(env.OPENAI_MAX_OUTPUT_TOKENS) ?? 8192,
+    maxOutputTokens: readOptionalPositiveInteger(groq ? env.GROQ_SUMMARY_MAX_OUTPUT_TOKENS : env.OPENAI_MAX_OUTPUT_TOKENS) ?? (groq ? 2048 : 8192),
     timeoutMs: readOptionalPositiveInteger(env.SUMMARY_TIMEOUT_MS) ?? 60_000,
     maxResponseBytes: readOptionalPositiveInteger(env.SUMMARY_MAX_RESPONSE_BYTES) ?? 262_144,
     intervalSeconds: readPositiveNumber(env.SUMMARY_INTERVAL_SECONDS, 10),
     monthlyBudgetUsd: readOptionalNonNegative(env.SUMMARY_MONTHLY_BUDGET_USD),
     meetingBudgetUsd: readOptionalNonNegative(env.SUMMARY_MEETING_BUDGET_USD),
-    maxRequestsPerMeeting: readOptionalPositiveInteger(env.SUMMARY_MAX_REQUESTS_PER_MEETING),
+    maxRequestsPerMeeting: readOptionalPositiveInteger(env.SUMMARY_MAX_REQUESTS_PER_MEETING) ?? (groq ? 10 : undefined),
     stopOnBudgetExceeded: readBoolean(env.SUMMARY_STOP_ON_BUDGET_EXCEEDED, true),
     usageFile: env.SUMMARY_USAGE_FILE || 'server/data/api-usage.jsonl',
-    pricingJson: env.OPENAI_PRICING_JSON || undefined,
+    pricingJson: (groq ? env.GROQ_SUMMARY_PRICING_JSON : env.OPENAI_PRICING_JSON) || undefined,
   };
 }
 

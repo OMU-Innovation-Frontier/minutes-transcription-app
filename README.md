@@ -4,6 +4,12 @@
 
 既存の最終要約・決定事項・TODO表示と履歴保存に、サーバー側のOpenAI Responses APIを接続できます。会議準備画面で送信内容を説明し、同意後に使用します。既定は無効・Mockのままです。設定と実機テスト手順は[OpenAI最終要約](docs/OPENAI_FINAL_SUMMARY.md)を参照してください。
 
+## Groqでも途中要約・最終要約を作る
+
+要約先をサーバー設定で `SUMMARY_PROVIDER=groq` に切り替えられます。OpenAI設定・既定値は保持します。専用のサーバー設定とキーが必要で、画面でGroqへの送信を確認して同意します。保存・TODO・PDF出力は既存の経路を使います。
+
+[Groq要約の設定・制限・比較手順](docs/GROQ_SUMMARY.md)を参照してください。実API・品質・無料枠内での長時間利用は未検証です。
+
 ## Groq Whisper STT MVP
 
 会議準備画面で`Groq Whisper（無料枠）`を選ぶと、ブラウザーで16 kHz mono PCM16へ変換したマイク音声を既存WebSocket経由でサーバーへ送り、VADで確定した発話だけをGroqへ送信します。モデルは`whisper-large-v3-turbo`、結果は発話終了後のfinal transcriptのみです。

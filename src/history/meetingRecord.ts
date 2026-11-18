@@ -226,7 +226,7 @@ function parsePersistedFinalSummary(value: unknown, evidenceIds: ReadonlySet<str
   const todos = finalSummary.todos.map(parseTodo);
   const createdAt = requireIsoDate(finalSummary.createdAt);
   const provider = finalSummary.provider;
-  if (provider !== null && provider !== 'mock' && provider !== 'openai') throw new MeetingRecordValidationError();
+  if (provider !== null && provider !== 'mock' && provider !== 'openai' && provider !== 'groq') throw new MeetingRecordValidationError();
   const apiUsed = finalSummary.apiUsed;
   if (apiUsed !== null && typeof apiUsed !== 'boolean') throw new MeetingRecordValidationError();
   return {

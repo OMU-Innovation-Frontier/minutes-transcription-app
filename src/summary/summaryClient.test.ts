@@ -431,7 +431,7 @@ describe('manual interim summaries', () => {
     h.coordinator.add([sentence('one'), sentence('two')]);
     expect(h.update).toHaveBeenCalledTimes(1);
     await h.coordinator.flushLive();
-    expect(h.update).toHaveBeenLastCalledWith('manual', live(1), [toSummarySentence(sentence('two'))]);
+    expect(h.update).toHaveBeenLastCalledWith('manual', live(1), [toSummarySentence(sentence('two'))], 'mock');
     h.coordinator.dispose();
   });
 
@@ -463,4 +463,45 @@ describe('manual interim summaries', () => {
     expect(h.onLiveSummary).toHaveBeenCalledTimes(1);
     h.coordinator.dispose();
   });
+});
+
+
+describe('Groq summary consent and safe errors', () => {
+  it('accepts Groq status only when external API use is honestly declared', async () => {
+    for (const apiUsed of [false, true]) {
+      const request = vi.fn(async () => new Response(JSON.stringify({ enabled: true, provider: 'groq', apiUsed, intervalSeconds: 10 })));
+      const client = new SummaryHttpClient('http://127.0.0.1:8787', request as typeof fetch);
+      if (apiUsed) await expect(client.status()).resolves.toMatchObject({ provider: 'groq', apiUsed: true });
+      else await expect(client.status()).rejects.toThrow();
+    }
+  });
+  it('does not send to Groq without consent or after a provider change since consent', async () => {
+    for (const [consent, expected] of [[false, 'groq'], [true, 'openai']] as const) {
+      const client = new SummaryHttpClient();
+      vi.spyOn(client, 'status').mockResolvedValue({ enabled: true, provider: 'groq', apiUsed: true, intervalSeconds: 10 });
+      const update = vi.spyOn(client, 'update');
+      const coordinator = new IncrementalSummaryCoordinator(client, 'synthetic', 1, {}, consent, false, expected);
+      coordinator.add([sentence('one')]);
+      await coordinator.flushLive();
+      expect(update).not.toHaveBeenCalled();
+      coordinator.dispose();
+    }
+  });
+  it.each([
+    ['summary_input_too_large', '要約対象が長すぎます'],
+    ['summary_rate_limited', '利用制限'],
+  ])('shows only a fixed safe message for %s', async (code, message) => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ code, message: 'private provider details' }), { status: 429 }));
+    const client = new SummaryHttpClient('http://127.0.0.1:8787', request as typeof fetch);
+    await expect(client.update('synthetic', null, [])).rejects.toThrow(message);
+    await expect(client.update('synthetic', null, [])).rejects.not.toThrow('private provider details');
+  });
+});
+
+
+it('sends the confirmed summary provider with every request so a restarted server cannot change destinations silently', async () => {
+  const request = vi.fn(async () => new Response(JSON.stringify(live(1)), { headers: { 'content-type': 'application/json' } }));
+  const client = new SummaryHttpClient('http://127.0.0.1:8787', request as typeof fetch);
+  await client.update('synthetic', null, [], 'groq');
+  expect(request).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ headers: { 'content-type': 'application/json', 'x-summary-provider': 'groq' } }));
 });

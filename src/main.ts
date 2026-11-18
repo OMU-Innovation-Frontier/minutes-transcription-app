@@ -690,7 +690,7 @@ function createSummaryCoordinator(meetingId: string): IncrementalSummaryCoordina
     onLiveSummary: renderLiveSummary,
     onUsage: renderUsage,
     onError: (error) => renderSummaryWarning(error.message),
-  }, meetingSummaryExternalAllowed, false);
+  }, meetingSummaryExternalAllowed, false, setupSummaryStatus?.provider);
 }
 
 function createCorrectionCoordinator(sessionId: string): CorrectionCoordinator {
@@ -872,6 +872,7 @@ function correctionExternalProcessingRequirements(): MeetingExternalProcessingRe
     summaryStatusKnown: setupSummaryStatus !== null,
     summaryEnabled: setupSummaryStatus?.enabled ?? false,
     summaryExternalTransmission: Boolean(setupSummaryStatus?.enabled && setupSummaryStatus.apiUsed),
+    summaryProvider: setupSummaryStatus?.provider,
   };
 }
 
@@ -884,7 +885,7 @@ function renderSummaryStatus(status: SummaryStatus): void {
   latestSummaryStatus = status;
   elements.summaryProviderStatus.textContent = !status.enabled
     ? '簡易要約は未使用'
-    : status.provider === 'openai' ? 'クラウド要約を使用中' : 'ローカルMock要約';
+    : status.provider === 'groq' ? 'Groq要約を使用中' : status.provider === 'openai' ? 'OpenAI要約を使用中' : 'ローカルMock要約';
 }
 
 function renderLiveSummary(summary: LiveMeetingSummary): void {

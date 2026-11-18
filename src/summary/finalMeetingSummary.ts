@@ -342,7 +342,7 @@ function appendDefinition(list: HTMLDListElement, termText: string, valueText: s
 }
 
 function providerLabel(provider: SummaryStatus['provider']): string {
-  return provider === 'mock' ? 'Mock要約（外部送信なし）' : '設定済みの要約Provider';
+  return provider === 'mock' ? 'Mock要約（外部送信なし）' : provider === 'groq' ? 'Groq要約' : 'OpenAI要約';
 }
 
 function formatCreatedAt(createdAt: string): string {
