@@ -22,20 +22,33 @@ export interface AccessConfig {
 export function loadAccessConfig(env: NodeJS.ProcessEnv = process.env): AccessConfig {
   const enabled = env.APP_ACCESS_ENABLED === 'true';
   const rawOrigin = env.APP_PUBLIC_ORIGIN || env.RENDER_EXTERNAL_URL || 'http://127.0.0.1:8787';
-  const origin = new URL(rawOrigin);
+  const originSetting = env.APP_PUBLIC_ORIGIN ? 'APP_PUBLIC_ORIGIN' : 'RENDER_EXTERNAL_URL / APP_PUBLIC_ORIGIN';
+  let origin: URL;
+  try { origin = new URL(rawOrigin); }
+  catch { throw invalidSetting(originSetting, 'HTTPSの公開URLを指定してください。'); }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname);
   const secure = origin.protocol === 'https:';
   const backend = env.APP_QUOTA_BACKEND || 'file';
-  const remoteValid = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(env.APP_QUOTA_SUPABASE_URL || '')
-    && /^sb_secret_[A-Za-z0-9_-]+$/.test(env.APP_QUOTA_SUPABASE_SECRET_KEY || '');
-  if (enabled && ((!secure && !(local && env.APP_ALLOW_LOCAL_HTTP === 'true' && origin.protocol === 'http:'))
-    || origin.origin !== rawOrigin || origin.username || origin.password
-    || !env.APP_ACCESS_PASSPHRASE || env.APP_ACCESS_PASSPHRASE.length < 20
-    || env.APP_ACCESS_PASSPHRASE.length > 256
-    || !['file', 'supabase'].includes(backend)
-    || (backend === 'file' && (!env.APP_QUOTA_FILE || Boolean(env.RENDER_EXTERNAL_URL)))
-    || (backend === 'supabase' && !remoteValid))) {
-    throw new Error('限定公開の設定が不正です。公開URL、合言葉、制限記録の保存先を確認してください。');
+  if (enabled) {
+    if ((!secure && !(local && env.APP_ALLOW_LOCAL_HTTP === 'true' && origin.protocol === 'http:'))
+      || origin.origin !== rawOrigin || origin.username || origin.password) {
+      throw invalidSetting(originSetting, 'HTTPSの公開URLを指定し、末尾のスラッシュ・パス・空白を除いてください。');
+    }
+    if (!env.APP_ACCESS_PASSPHRASE || env.APP_ACCESS_PASSPHRASE.length < 20 || env.APP_ACCESS_PASSPHRASE.length > 256) {
+      throw invalidSetting('APP_ACCESS_PASSPHRASE', '20〜256文字の合言葉を指定してください。');
+    }
+    if (!['file', 'supabase'].includes(backend) || (backend === 'file' && Boolean(env.RENDER_EXTERNAL_URL))) {
+      throw invalidSetting('APP_QUOTA_BACKEND', 'Renderではsupabaseを指定してください。');
+    }
+    if (backend === 'file' && !env.APP_QUOTA_FILE) throw invalidSetting('APP_QUOTA_FILE', '永続保存する記録ファイルのパスを指定してください。');
+    if (backend === 'supabase') {
+      if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(env.APP_QUOTA_SUPABASE_URL || '')) {
+        throw invalidSetting('APP_QUOTA_SUPABASE_URL', 'Project URLを指定し、末尾のスラッシュ・パス・空白を除いてください。');
+      }
+      if (!/^sb_secret_[A-Za-z0-9_-]+$/.test(env.APP_QUOTA_SUPABASE_SECRET_KEY || '')) {
+        throw invalidSetting('APP_QUOTA_SUPABASE_SECRET_KEY', 'sb_secret_で始まるSecret keyを指定し、前後の空白・改行を除いてください。');
+      }
+    }
   }
   return {
     enabled, passphrase: env.APP_ACCESS_PASSPHRASE || '', origin: origin.origin, secure,
@@ -52,6 +65,11 @@ export function loadAccessConfig(env: NodeJS.ProcessEnv = process.env): AccessCo
     dailyCorrection: number(env.APP_DAILY_CORRECTION_REQUESTS, 2000, 1, 10_000),
     dailyAudioSeconds: number(env.APP_DAILY_AUDIO_SECONDS, 14_400, 1, 86_400),
   };
+}
+
+// Only fixed setting names and guidance belong here. Never attach rejected values or URL parse errors.
+function invalidSetting(name: string, guidance: string): Error {
+  return new Error(`限定公開の設定が不正です: ${name}。${guidance}（設定値はログに表示していません。）`);
 }
 
 function number(value: string | undefined, fallback: number, minimum: number, maximum: number): number {
