@@ -78,6 +78,7 @@ describe('limited-access server boundaries', () => {
     const h = await start();
     const page = await fetch(h.base + '/'); expect(await page.text()).toContain('Minutesへの入室');
     expect(page.headers.get('cache-control')).toBe('no-store');
+    expect(page.headers.get('referrer-policy')).toBe('same-origin');
     expect(await fetch(h.base + '/health').then(result => result.json())).toEqual({ status: 'ok' });
     for (const path of ['/api/summary/status', '/api/correction/status', '/api/summary/usage?meetingId=synthetic-meeting', '/index.html']) expect((await fetch(h.base + path)).status).toBe(401);
     for (const path of ['/api/summary/live', '/api/summary/final', '/api/correction']) expect((await post(h.base, path, '')).status).toBe(401);
@@ -101,6 +102,29 @@ describe('limited-access server boundaries', () => {
     expect(await rejectedSocket(h.ws, session, 'https://untrusted.test')).toBe(403);
     expect(h.finalized).not.toHaveBeenCalled(); expect(h.corrected).not.toHaveBeenCalled();
     expect(JSON.parse(await readFile(h.accessConfig.quotaFile, 'utf8'))).toMatchObject({ summary: 0, correction: 0 });
+  });
+  it('keeps native login/logout form origins usable and rejects absent, null and foreign origins', async () => {
+    const h = await start();
+    const page = await fetch(h.base + '/auth/login');
+    expect(page.headers.get('referrer-policy')).toBe('same-origin');
+    expect(await page.text()).toContain('method="post" action="/auth/login"');
+    const session = await cookie(h.base);
+    const app = await fetch(h.base + '/', { headers: { cookie: session } });
+    expect(app.headers.get('referrer-policy')).toBe('same-origin');
+    for (const origin of [undefined, 'null', 'https://untrusted.test']) {
+      for (const path of ['/auth/login', '/auth/logout']) {
+        const rejected = await fetch(h.base + path, { method: 'POST', redirect: 'manual',
+          headers: { cookie: session, 'content-type': 'application/x-www-form-urlencoded', ...(origin ? { origin } : {}) },
+          body: new URLSearchParams({ passphrase }) });
+        expect(rejected.status).toBe(403);
+        expect(rejected.headers.get('set-cookie')).toBeNull();
+        expect(await rejected.json()).toMatchObject({ code: 'access_origin' });
+      }
+    }
+    expect((await fetch(h.base + '/auth/session', { headers: { cookie: session } })).status).toBe(200);
+    const logout = await fetch(h.base + '/auth/logout', { method: 'POST', redirect: 'manual', headers: { cookie: session, origin: publicOrigin } });
+    expect(logout.status).toBe(303);
+    expect((await fetch(h.base + '/auth/session', { headers: { cookie: session } })).status).toBe(401);
   });
   it('reserves failed calls too, isolates meeting usage by login session, and retains the global limit after restart', async () => {
     const h = await start({ dailySummary: 2 }); const first = await cookie(h.base), second = await cookie(h.base);
