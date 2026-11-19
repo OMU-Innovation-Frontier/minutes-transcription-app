@@ -8,7 +8,9 @@ import { AccessError } from './quotaStore.js';
 export function securityHeaders(response: ServerResponse): void {
   response.setHeader('cache-control', 'no-store');
   response.setHeader('x-content-type-options', 'nosniff');
-  response.setHeader('referrer-policy', 'no-referrer');
+  // no-referrer makes native form POSTs send Origin: null, breaking strict login/logout checks.
+  // Preserve same-origin form metadata while suppressing referrers to external sites.
+  response.setHeader('referrer-policy', 'same-origin');
   response.setHeader('x-frame-options', 'DENY');
   response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
 }
