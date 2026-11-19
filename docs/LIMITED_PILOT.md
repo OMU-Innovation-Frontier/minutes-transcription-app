@@ -23,6 +23,8 @@ Renderのビルドでは `npm exec --yes --package=pnpm@11.9.0 -- pnpm` でCIと
 
 既に作成したBlueprintで古いビルド設定が残る場合は、RenderのBlueprint画面で最新のmainを同期（Sync）します。サービスのSettingsでBuild CommandとStart Commandが `render.yaml` と一致することを確認してから再デプロイします。キーや合言葉を再発行する必要はありません。
 
+起動ログで「限定公開の設定が不正です」と表示された場合は、その直後に出る環境変数名をEnvironmentで確認します。ログには入力値を表示しません。合言葉は20〜256文字、SupabaseのProject URLは末尾のスラッシュなし、Secret keyは `sb_secret_` で始まる形式が必要です。URL・キーの前後に空白や改行が混ざらないようにしてください。`APP_QUOTA_BACKEND` は `supabase` です。`APP_PUBLIC_ORIGIN` を追加している場合、Supabase URLではなくRenderアプリのHTTPSオリジンを指定します。通常はその項目を設定せず、Renderの自動設定を使います。保存・再デプロイ後の新しいログで確認してください。キー・合言葉の値をチャットやスクリーンショットで送る必要はありません。
+
 初期設定はGroqで文字起こし・要約、AI整文はOFFです。要約入力の上限は既定12,000 UTF-8バイトで、長時間の会議全文を要約できる保証はありません。詳しくは [Groqの要約手順](GROQ_SUMMARY.md) を参照してください。APIの利用条件・残量・課金設定は提供元の管理画面でも確認してください。アプリの回数制限は請求額の保証ではありません。
 
 ## 公開前の動作確認
