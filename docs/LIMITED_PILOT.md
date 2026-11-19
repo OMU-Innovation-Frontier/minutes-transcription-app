@@ -19,7 +19,9 @@
 
 5. デプロイ完了を待ち、Renderの公開URLを開きます。公開URLは `RENDER_EXTERNAL_URL` から自動設定されます。独自ドメインを使う場合だけ `APP_PUBLIC_ORIGIN` をそのHTTPSオリジンに設定します。
 
-ビルドは `pnpm install --frozen-lockfile` と `pnpm run build`、起動は `pnpm start` です。Renderでは `PORT` を使い、ホストは `0.0.0.0` です。ローカルの `.env` をアップロードしないでください。`VITE_SERVER_HTTP_URL` と `VITE_TRANSCRIPTION_WEBSOCKET_URL` はRenderに設定しません。HTTPSと同じ公開先へ自動接続します。
+Renderのビルドでは `npm exec --yes --package=pnpm@11.9.0 -- pnpm` でCIと同じpnpmを起動し、`install --frozen-lockfile` と `run build` を実行します。Node付属の古いCorepackによる署名検証エラーを避けるため、この起動方法を指定しています。起動コマンドは `node server/dist/server/src/index.js` です。Renderでは `PORT` を使い、ホストは `0.0.0.0` です。ローカルの `.env` をアップロードしないでください。`VITE_SERVER_HTTP_URL` と `VITE_TRANSCRIPTION_WEBSOCKET_URL` はRenderに設定しません。HTTPSと同じ公開先へ自動接続します。
+
+既に作成したBlueprintで古いビルド設定が残る場合は、RenderのBlueprint画面で最新のmainを同期（Sync）します。サービスのSettingsでBuild CommandとStart Commandが `render.yaml` と一致することを確認してから再デプロイします。キーや合言葉を再発行する必要はありません。
 
 初期設定はGroqで文字起こし・要約、AI整文はOFFです。要約入力の上限は既定12,000 UTF-8バイトで、長時間の会議全文を要約できる保証はありません。詳しくは [Groqの要約手順](GROQ_SUMMARY.md) を参照してください。APIの利用条件・残量・課金設定は提供元の管理画面でも確認してください。アプリの回数制限は請求額の保証ではありません。
 
