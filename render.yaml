@@ -4,14 +4,13 @@ services:
     runtime: node
     plan: free
     region: singapore
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm run build
-    startCommand: pnpm start
+    # Bootstrap the CI-pinned pnpm directly, without the Node image's bundled Corepack.
+    buildCommand: npm exec --yes --package=pnpm@11.9.0 -- pnpm install --frozen-lockfile && npm exec --yes --package=pnpm@11.9.0 -- pnpm run build
+    startCommand: node server/dist/server/src/index.js
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: 22.13.0
-      - key: PNPM_VERSION
-        value: 11.9.0
       - key: STT_HOST
         value: 0.0.0.0
       - key: APP_ACCESS_ENABLED
