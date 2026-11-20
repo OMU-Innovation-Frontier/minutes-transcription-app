@@ -117,6 +117,7 @@ export class MeetingHistoryPersistenceCoordinator {
       () => createRecordFromEndedMeeting(snapshot, finalSummary, summaryApiUsed),
       generation,
       snapshot,
+      { preserveTitle: true },
     );
     this.finalSaves.set(key, promise);
     return promise;
@@ -143,12 +144,13 @@ export class MeetingHistoryPersistenceCoordinator {
     createRecord: () => MeetingRecord,
     generation: number,
     snapshot: EndedMeetingSnapshot,
+    options?: { preserveTitle: boolean },
   ): Promise<boolean> {
     try {
       if (!this.repository) throw new Error('Meeting history storage is unavailable.');
       const record = createRecord();
       if (!this.isCurrent(snapshot) || generation !== this.generation) return false;
-      await this.repository.save(record);
+      await this.repository.save(record, options);
       return true;
     } catch {
       if (this.isCurrent(snapshot) && generation === this.generation) this.notifyWarning();

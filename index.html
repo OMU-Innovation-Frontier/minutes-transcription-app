@@ -8,213 +8,188 @@
   </head>
   <body>
     <div class="app-shell">
-      <section id="home-view" class="app-view home-view" aria-labelledby="home-title">
-        <header class="home-header">
-          <a class="brand" href="#home-title" aria-label="Minutes ホーム">
-            <span class="brand__mark" aria-hidden="true">M</span>
-            <span>Minutes</span>
-          </a>
-          <button id="home-settings-button" class="quiet-button" type="button" aria-haspopup="dialog">設定</button>
-          <form id="access-logout-form" action="/auth/logout" method="post" hidden><button id="access-logout-button" class="quiet-button" type="submit">退室する</button></form>
-        </header>
-
-        <div id="home-connection-error" class="inline-alert" role="alert" hidden></div>
-
-        <main class="home-main">
-          <section class="home-hero" aria-labelledby="home-title">
-            <p class="eyebrow">MEETING NOTES, AS THEY HAPPEN</p>
-            <h1 id="home-title">会話に集中できる、<br />静かな議事録。</h1>
-            <p>会議を始めると、発言をその場で文字にして、原文を保ったまま読みやすく整えます。</p>
-            <button id="new-meeting-button" class="primary-action" type="button">
-              <span aria-hidden="true">＋</span> 新しい会議を始める
-            </button>
-            <div id="home-active-meeting" class="active-meeting" hidden>
-              <span class="recording-pulse" aria-hidden="true"></span>
-              <div><strong>進行中の会議があります</strong><span>録音と文字起こしの状態は保持されています</span></div>
-              <button id="resume-meeting-button" class="text-button" type="button">会議へ戻る</button>
+      <div id="workspace" class="workspace">
+        <aside class="workspace-sidebar" aria-label="会議メニュー">
+          <div class="sidebar-header">
+            <div class="brand"><span class="brand__mark" aria-hidden="true">M</span><span>Minutes</span></div>
+            <button id="new-meeting-button" class="primary-action" type="button"><span aria-hidden="true">＋</span> 新規会議</button>
+            <div id="home-active-meeting" hidden>
+              <button id="resume-meeting-button" class="secondary-button" type="button">現在の会議</button>
             </div>
-          </section>
-
-          <section class="meeting-history" aria-labelledby="history-title">
-            <div class="section-heading">
-              <div>
-                <p class="section-kicker">RECENT</p>
-                <h2 id="history-title" tabindex="-1">これまでの会議</h2>
-              </div>
-            </div>
-            <p class="history-help">会議を選ぶと内容を確認できます。「…」からPDF保存・共有・削除ができます。PDFには最終要約・決定事項・TODOを出力します。共有用テキストには文字起こしも含まれます。</p>
+            <button id="history-toggle" class="quiet-button" type="button" aria-expanded="false" aria-controls="sidebar-history">履歴</button>
+            <button id="home-settings-button" class="quiet-button" type="button" aria-haspopup="dialog">設定</button>
+          </div>
+          <section id="sidebar-history" class="meeting-history" aria-labelledby="history-title">
+            <h2 id="history-title" tabindex="-1">会議履歴</h2>
             <p id="home-history-notification" class="inline-alert" role="status" aria-live="polite" tabindex="-1" hidden aria-hidden="true"></p>
             <div id="home-history-status" class="history-status" role="status" aria-live="polite">
               <p id="home-history-status-message">会議履歴を読み込んでいます。</p>
               <button id="home-history-retry-button" class="text-button" type="button" hidden>履歴を再読み込み</button>
             </div>
-            <div id="home-history-empty" class="empty-state" hidden>
-              <strong>保存された会議履歴はありません</strong>
-              <p>新しい会議を終了すると、この端末に保存された履歴がここに表示されます。</p>
-            </div>
+            <p id="home-history-empty" class="history-status" hidden>保存された会議履歴はありません。</p>
             <ol id="meeting-history-list" class="history-list" hidden></ol>
           </section>
-        </main>
-      </section>
+          <form id="access-logout-form" action="/auth/logout" method="post" hidden><button id="access-logout-button" class="quiet-button" type="submit">退室する</button></form>
+        </aside>
 
-      <section id="meeting-setup-view" class="app-view meeting-setup-view" aria-labelledby="meeting-setup-title" hidden aria-hidden="true">
-        <main class="setup-main">
-          <button id="setup-cancel-button" class="back-button" type="button">← ホームへ戻る</button>
-          <p class="section-kicker">MEETING SETUP</p>
-          <h1 id="meeting-setup-title">新しい会議を準備</h1>
-          <p>録音を開始する前に、文字起こし方法とデータ処理を確認してください。</p>
-          <form id="meeting-setup-form" novalidate>
-            <fieldset><legend>会議の基本情報</legend><label class="field"><span>会議タイトル</span><input id="setup-title" required maxlength="80" aria-describedby="setup-title-error" /><span id="setup-title-error" class="inline-alert" role="alert"></span></label><label class="field"><span>言語</span><select id="setup-language"><option value="ja-JP">日本語</option><option value="en-US">English</option></select></label></fieldset>
-            <fieldset><legend>文字起こし方法</legend><label class="field"><span>方法</span><select id="setup-provider"><option value="local-whisper">Local Whisper</option><option value="groq-whisper">Groq Whisper（無料枠）</option><option value="browser">ブラウザー音声認識</option><option value="mock">Mock（開発者向け）</option><option value="websocket">WebSocket（開発者向け）</option></select></label><p id="setup-provider-description" class="privacy-copy"></p></fieldset>
-            <fieldset><legend>会議中に使用する機能</legend><label><input id="setup-correction" type="checkbox" /> 確定した発言を読みやすい文章に整える</label><label><input id="setup-live-summary" type="checkbox" /> ボタンで途中要約を作る</label><label><input id="setup-final-summary" type="checkbox" /> 会議終了後に最終要約とTODOを作る</label></fieldset>
-            <fieldset><legend>会議履歴</legend><p>会議中の確定発言はこの端末に途中保存され、再読み込み後は録音を停止した状態で復元します。会議終了後、履歴はこの端末のブラウザー内へ保存され、ページを閉じて開き直しても確認できます。サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。クラウド保存・チーム共有・アカウント保護には対応していません。</p></fieldset>
-            <fieldset id="setup-external-confirmation" hidden><legend>外部処理の確認</legend><p id="setup-external-description">この設定ではデータを外部サービスへ送信します。</p><label><input id="setup-external-ack" type="checkbox" /> データの処理方法を確認しました</label></fieldset>
-            <section aria-live="polite" class="setup-summary"><h2>この会議の設定</h2><ul id="setup-summary-list"></ul></section>
-            <div class="setup-actions"><button id="setup-create-button" class="primary-action" type="submit">この設定で会議を作成</button><button id="setup-cancel-button-secondary" class="secondary-button" type="button">キャンセルしてホームへ戻る</button></div>
-          </form>
-        </main>
-      </section>
-
-      <section id="meeting-view" class="app-view meeting-view" aria-labelledby="meeting-title" hidden aria-hidden="true">
-        <header class="meeting-header">
-          <button id="meeting-home-button" class="back-button" type="button" aria-label="ホームへ戻る">← <span>ホーム</span></button>
-          <div class="meeting-heading">
-            <p class="meeting-heading__label">LIVE MEETING</p>
-            <h1 id="meeting-title">新しい会議</h1>
-          </div>
-          <div class="meeting-header__status">
-            <div id="recording-status" class="meeting-state" role="status" aria-live="polite">
-              <span class="meeting-state__dot" aria-hidden="true"></span>
-              <span id="recording-status-label">会議開始前</span>
+        <main class="workspace-main">
+          <section id="home-view" class="app-view home-view" aria-labelledby="home-title">
+            <div class="home-hero">
+              <span class="brand__mark" aria-hidden="true">M</span>
+              <h1 id="home-title">会議を記録する</h1>
+              <p>「新規会議」で録音を開始します。</p>
+              <div id="home-connection-error" class="inline-alert" role="alert" hidden></div>
             </div>
-            <time id="elapsed-time" class="meeting-timer">00:00</time>
-          </div>
-          <button id="meeting-settings-button" class="icon-button" type="button" aria-label="会議設定を開く" aria-haspopup="dialog">設定</button>
-          <button id="end-meeting-button" class="end-button" type="button">会議を終了</button>
-        </header>
+          </section>
 
-        <div id="transcript-scroll" class="meeting-scroll">
-          <div class="meeting-column">
-            <div class="connection-row">
-              <div id="recognition-status" class="connection-status" role="status" aria-live="polite">
-                <span class="connection-status__dot" aria-hidden="true"></span>
-                <span id="recognition-status-label">接続待ち</span>
+          <section id="meeting-view" class="app-view meeting-view" aria-labelledby="meeting-title" hidden aria-hidden="true">
+            <header class="meeting-header">
+              <div class="meeting-heading">
+                <h1 id="meeting-title" tabindex="-1">新規会議</h1>
               </div>
-              <div id="connection-note" class="connection-note" role="status" hidden></div>
-            </div>
-            <div id="buffer-warning" class="inline-alert" role="alert" hidden></div>
-            <div id="error-message" class="inline-alert inline-alert--danger" role="alert" hidden></div>
-            <div id="correction-warning" class="inline-alert" role="alert" hidden></div>
-            <div id="summary-warning" class="inline-alert" role="alert" hidden></div>
-
-            <section class="live-summary" aria-labelledby="summary-title">
-              <div class="content-heading">
-                <div><p class="section-kicker">LIVE SUMMARY</p><h2 id="summary-title">途中要約</h2></div>
-                <span id="summary-provider-status" class="subtle-status">要約を確認中</span>
-              </div>
-              <button id="summarize-now-button" type="button" class="secondary-button" disabled>ここまでを要約</button>
-              <p id="manual-summary-status" role="status" aria-live="polite"></p>
-              <details id="live-summary-details" class="summary-details" open>
-                <summary>現在の簡易要約</summary>
-                <div id="summary-empty" class="summary-empty">
-                  <p>「ここまでを要約」を押すと、ここに要約が表示されます。</p>
+              <div class="meeting-header__status">
+                <div id="recording-status" class="meeting-state" role="status" aria-live="polite">
+                  <span class="meeting-state__dot" aria-hidden="true"></span>
+                  <span id="recording-status-label">会議開始前</span>
                 </div>
-                <div id="summary-content" class="summary-content" hidden>
-                  <p id="summary-topic" class="summary-topic"></p>
-                  <div class="summary-sections">
-                    <section><h3>要点</h3><ul id="summary-points"></ul></section>
-                    <section><h3>決まったこと</h3><ul id="summary-decisions"></ul></section>
-                    <section><h3>次に行うこと</h3><ul id="summary-actions"></ul></section>
-                    <section><h3>確認が必要なこと</h3><ul id="summary-questions"></ul></section>
+                <time id="elapsed-time" class="meeting-timer">00:00</time>
+              </div>
+            </header>
+
+            <div class="meeting-notices">
+                <div class="connection-row">
+                  <div id="recognition-status" class="connection-status" role="status" aria-live="polite">
+                    <span class="connection-status__dot" aria-hidden="true"></span>
+                    <span id="recognition-status-label">接続待ち</span>
                   </div>
+                  <div id="connection-note" class="connection-note" role="status" hidden></div>
                 </div>
-              </details>
-              <div id="interim-summary-history" aria-label="これまでの途中要約"></div>
-            </section>
-
-            <section class="live-transcript" aria-labelledby="transcript-title">
-              <div class="content-heading transcript-heading">
-                <div><p class="section-kicker">TRANSCRIPT</p><h2 id="transcript-title">文字起こし</h2></div>
-              </div>
-              <p id="transcript-empty" class="transcript-empty">録音を始めると、ここに発言が表示されます。</p>
-              <ol id="final-transcript" class="transcript-list" aria-label="確定した文字起こし"></ol>
-              <div id="interim-transcript" class="interim-transcript" aria-live="polite" hidden>
-                <span>聞き取り中</span><p id="interim-text"></p>
-              </div>
-            </section>
-
-            <div class="meeting-scroll-spacer" aria-hidden="true"></div>
-          </div>
-        </div>
-
-        <div class="meeting-scroll-actions">
-          <button id="latest-transcript-button" class="latest-button" type="button" hidden>↓ 最新の発話へ戻る</button>
-        </div>
-        <div id="latest-announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
-
-        <footer class="meeting-controls" aria-label="録音操作">
-          <div class="meeting-controls__inner">
-            <div class="microphone-level">
-              <span id="microphone-state">マイク待機中</span>
-              <div id="level-meter" class="level-meter" role="meter" aria-label="マイク入力レベル" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                <div id="level-bar" class="level-meter__bar"></div>
-              </div>
-              <output id="level-label" class="sr-only">0%</output>
+                <div id="buffer-warning" class="inline-alert" role="alert" hidden></div>
+                <div id="error-message" class="inline-alert inline-alert--danger" role="alert" hidden></div>
+                <div id="correction-warning" class="inline-alert" role="alert" hidden></div>
+                <div id="summary-warning" class="inline-alert" role="alert" hidden></div>
             </div>
-            <time id="elapsed-time-footer" class="control-timer">00:00</time>
-            <button id="start-button" class="control-button control-button--start" type="button">録音を開始</button>
-            <button id="stop-button" class="control-button" type="button" disabled>一時停止</button>
-            <button id="end-meeting-button-footer" class="control-button control-button--end" type="button">会議を終了</button>
-          </div>
-        </footer>
-      </section>
+            <div class="meeting-panels">
+                <section class="live-transcript" aria-labelledby="transcript-title">
+                  <div class="content-heading transcript-heading">
+                    <h2 id="transcript-title">文字起こし</h2>
+                    <button id="latest-transcript-button" class="latest-button" type="button" hidden>↓ 最新の発話へ</button>
+                  </div>
+                  <div id="transcript-scroll" class="panel-scroll" tabindex="0" role="region" aria-label="文字起こしの内容">
+                    <p id="transcript-empty" class="transcript-empty">発言がここに表示されます。</p>
+                    <ol id="final-transcript" class="transcript-list" aria-label="確定した文字起こし"></ol>
+                    <div id="interim-transcript" class="interim-transcript" aria-live="polite" hidden>
+                      <span>聞き取り中</span><p id="interim-text"></p>
+                    </div>
+                  </div>
+                </section>
+                <section class="live-summary" aria-labelledby="summary-title">
+                  <div class="content-heading">
+                    <h2 id="summary-title">途中要約</h2>
+                    <span id="summary-provider-status" class="subtle-status">要約を確認中</span>
+                  </div>
+                  <button id="summarize-now-button" type="button" class="secondary-button" disabled>ここまでを要約</button>
+                  <p id="manual-summary-status" role="status" aria-live="polite"></p>
+                  <div class="panel-scroll" tabindex="0" role="region" aria-label="途中要約の内容">
+                    <details id="live-summary-details" class="summary-details" open>
+                      <summary>現在の簡易要約</summary>
+                      <div id="summary-empty" class="summary-empty">
+                        <p>「ここまでを要約」を押すと、ここに要約が表示されます。</p>
+                      </div>
+                      <div id="summary-content" class="summary-content" hidden>
+                        <p id="summary-topic" class="summary-topic"></p>
+                        <div class="summary-sections">
+                          <section><h3>要点</h3><ul id="summary-points"></ul></section>
+                          <section><h3>決まったこと</h3><ul id="summary-decisions"></ul></section>
+                          <section><h3>次に行うこと</h3><ul id="summary-actions"></ul></section>
+                          <section><h3>確認が必要なこと</h3><ul id="summary-questions"></ul></section>
+                        </div>
+                      </div>
+                    </details>
+                    <div id="interim-summary-history" aria-label="これまでの途中要約"></div>
+                  </div>
+                </section>
+            </div>
+            <div id="latest-announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
-      <section id="meeting-detail-view" class="app-view detail-view" aria-labelledby="detail-title" hidden aria-hidden="true">
-        <header class="detail-header">
-          <button id="detail-home-button" class="back-button" type="button">← ホーム</button>
-          <div class="brand brand--compact"><span class="brand__mark" aria-hidden="true">M</span><span>Minutes</span></div>
-        </header>
-        <main class="detail-main">
-          <p class="section-kicker">MEETING COMPLETE</p>
-          <h1 id="detail-title">新しい会議</h1>
-          <p id="detail-date" class="detail-date"></p>
-          <section id="detail-history-status" class="detail-history-status" role="status" aria-live="polite" hidden>
-            <p id="detail-history-status-message"></p>
-            <button id="detail-history-retry-button" class="secondary-button" type="button" hidden>詳細を再読み込み</button>
+            <footer class="meeting-controls" aria-label="録音操作">
+              <div class="meeting-controls__inner">
+                <div class="microphone-level">
+                  <span id="microphone-state">マイク待機中</span>
+                  <div id="level-meter" class="level-meter" role="meter" aria-label="マイク入力レベル" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <div id="level-bar" class="level-meter__bar"></div>
+                  </div>
+                  <output id="level-label" class="sr-only">0%</output>
+                </div>
+                <button id="start-button" class="control-button control-button--start" type="button">録音を開始</button>
+                <button id="stop-button" class="control-button" type="button" disabled>一時停止</button>
+                <button id="end-meeting-button" class="control-button control-button--end" type="button">会議を終了</button>
+              </div>
+            </footer>
           </section>
-          <section id="detail-summary-section" class="detail-summary" aria-labelledby="detail-summary-title">
-            <h2 id="detail-summary-title">簡易要約</h2>
-            <p id="detail-summary-text" role="status" aria-live="polite">会議内容が増えると、ここに簡易要約が表示されます。</p>
-            <div id="final-summary" class="final-summary" aria-label="最終要約とTODO" hidden></div>
-          </section>
-          <section id="detail-transcript-section" class="detail-transcript-section" aria-labelledby="detail-transcript-title">
-            <h2 id="detail-transcript-title">文字起こし全文</h2>
-            <p id="detail-transcript-empty" class="empty-state">文字起こしはありません。</p>
-            <ol id="detail-transcript" class="transcript-list transcript-list--detail"></ol>
-          </section>
-          <p id="detail-persistence-note" class="persistence-note">履歴の保存状態を確認しています。</p>
-          <section id="persisted-detail-actions" class="persisted-detail-actions" aria-labelledby="persisted-detail-actions-title" hidden aria-hidden="true">
-            <p class="section-kicker">DANGER ZONE</p>
-            <h2 id="persisted-detail-actions-title">履歴の管理</h2>
-            <p>この端末のブラウザー内に保存された会議履歴を削除します。この操作は取り消せません。</p>
-            <button id="delete-meeting-history-button" class="danger-button" type="button">この会議履歴を削除</button>
-            <p id="delete-meeting-history-status" class="inline-alert inline-alert--danger" role="status" aria-live="assertive" tabindex="-1" hidden aria-hidden="true"></p>
-            <button id="retry-delete-meeting-history-button" class="secondary-button" type="button" hidden aria-hidden="true">削除を再試行</button>
+
+          <section id="meeting-detail-view" class="app-view detail-view" aria-labelledby="detail-title" hidden aria-hidden="true">
+            <header class="detail-header">
+              <div class="detail-heading">
+                <h1 id="detail-title" tabindex="-1">新規会議</h1>
+                <p id="detail-date" class="detail-date"></p>
+              </div>
+              <button id="detail-home-button" class="back-button" type="button">閉じる</button>
+            </header>
+            <div class="detail-main">
+              <section id="detail-history-status" class="detail-history-status" role="status" aria-live="polite" hidden>
+                <p id="detail-history-status-message"></p>
+                <button id="detail-history-retry-button" class="secondary-button" type="button" hidden>詳細を再読み込み</button>
+              </section>
+              <div class="detail-panels">
+                <section id="detail-transcript-section" class="detail-transcript-section" aria-labelledby="detail-transcript-title">
+                  <h2 id="detail-transcript-title">文字起こし全文</h2>
+                  <div class="panel-scroll" tabindex="0" role="region" aria-label="文字起こし全文の内容">
+                    <p id="detail-transcript-empty" class="empty-state">文字起こしはありません。</p>
+                    <ol id="detail-transcript" class="transcript-list transcript-list--detail"></ol>
+                  </div>
+                </section>
+                <section id="detail-summary-section" class="detail-summary" aria-labelledby="detail-summary-title">
+                  <h2 id="detail-summary-title">簡易要約</h2>
+                  <div class="panel-scroll" tabindex="0" role="region" aria-label="会議の要約">
+                    <p id="detail-summary-text" role="status" aria-live="polite">会議内容が増えると、ここに簡易要約が表示されます。</p>
+                    <div id="final-summary" class="final-summary" aria-label="最終要約とTODO" hidden></div>
+                  </div>
+                </section>
+              </div>
+              <p id="detail-persistence-note" class="persistence-note">履歴の保存状態を確認しています。</p>
+              <section id="persisted-detail-actions" class="persisted-detail-actions" aria-labelledby="persisted-detail-actions-title" hidden aria-hidden="true">
+                <h2 id="persisted-detail-actions-title">履歴の管理</h2>
+                <button id="delete-meeting-history-button" class="danger-button" type="button">この会議履歴を削除</button>
+                <p id="delete-meeting-history-status" class="inline-alert inline-alert--danger" role="status" aria-live="assertive" tabindex="-1" hidden aria-hidden="true"></p>
+                <button id="retry-delete-meeting-history-button" class="secondary-button" type="button" hidden aria-hidden="true">削除を再試行</button>
+              </section>
+            </div>
           </section>
         </main>
-      </section>
+      </div>
 
       <aside id="settings-panel" class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
         <div class="settings-panel__backdrop" aria-hidden="true"></div>
         <div class="settings-panel__sheet">
-          <header><div><p class="section-kicker">SETTINGS</p><h2 id="settings-title">会議設定</h2></div><button id="settings-close-button" class="icon-button" type="button" aria-label="設定を閉じる">閉じる</button></header>
+          <header><h2 id="settings-title">会議設定</h2><button id="settings-close-button" class="icon-button" type="button" aria-label="設定を閉じる">閉じる</button></header>
           <section id="meeting-settings-summary" class="meeting-settings-summary" hidden></section>
-          <label class="field"><span>会議タイトル</span><input id="meeting-title-input" type="text" value="新しい会議" maxlength="80" /></label>
-          <div class="settings-grid">
-            <label class="field"><span>文字起こし方法</span><select id="provider-select"><option value="browser">ブラウザー音声認識</option><option value="mock">モック認識（音声送信なし）</option><option value="websocket">WebSocketモック認識</option><option value="local-whisper">Local Whisper small（このPC）</option><option value="groq-whisper">Groq Whisper（無料枠）</option></select></label>
-            <label class="field"><span>言語</span><select id="language-select"><option value="ja-JP">日本語</option><option value="en-US">English</option></select></label>
-          </div>
-          <p id="privacy-note" class="privacy-copy"></p>
+          <form id="meeting-setup-form">
+            <p class="privacy-copy">変更はこのページで始める次の会議に適用されます。</p>
+            <div class="settings-grid">
+              <label class="field"><span>文字起こし方法</span><select id="setup-provider"><option value="local-whisper">Local Whisper</option><option value="groq-whisper">Groq Whisper（無料枠）</option><option value="browser">ブラウザー音声認識</option><option value="mock">Mock（開発者向け）</option><option value="websocket">WebSocket（開発者向け）</option></select></label>
+              <label class="field"><span>言語</span><select id="setup-language"><option value="ja-JP">日本語</option><option value="en-US">English</option></select></label>
+            </div>
+            <p id="setup-provider-description" class="privacy-copy"></p>
+            <fieldset><legend>要約・整文</legend><label><input id="setup-correction" type="checkbox" /> 確定した発言を整文する</label><label><input id="setup-live-summary" type="checkbox" /> ボタンで途中要約を作る</label><label><input id="setup-final-summary" type="checkbox" /> 会議終了後に最終要約とTODOを作る</label></fieldset>
+            <fieldset id="setup-external-confirmation" hidden><legend>外部処理の確認</legend><p id="setup-external-description" class="privacy-copy"></p><label><input id="setup-external-ack" type="checkbox" /> このページで開始する会議のデータ処理方法を確認しました</label></fieldset>
+            <p id="setup-error" class="inline-alert" role="status" hidden></p>
+            <button id="setup-create-button" class="primary-action" type="submit" hidden>録音を開始</button>
+          </form>
+          <details class="storage-settings">
+            <summary>会議履歴の保存先</summary>
+            <p class="privacy-copy">確定発言はこの端末に途中保存され、再読み込み後は録音を停止した状態で復元します。終了した会議はページを閉じて開き直しても確認できます。サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。クラウド保存・チーム共有・アカウント保護には対応していません。</p>
+          </details>
 
           <details id="developer-settings" class="developer-settings">
             <summary>開発者向け表示</summary>
@@ -268,11 +243,23 @@
       <section id="end-meeting-dialog" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="end-dialog-title" hidden>
         <div class="confirm-dialog__backdrop" aria-hidden="true"></div>
         <div class="confirm-dialog__body">
-          <p class="section-kicker">END MEETING</p>
           <h2 id="end-dialog-title">この会議を終了しますか？</h2>
-          <p>会議終了時に、確定した文字起こしと会議情報をこの端末のブラウザー内へ保存します。サイトデータを削除すると履歴は失われます。</p>
-          <div class="confirm-dialog__actions"><button id="cancel-end-meeting-button" class="secondary-button" type="button">会議を続ける</button><button id="confirm-end-meeting-button" class="end-button" type="button">終了する</button></div>
+          <p>文字起こしと会議名をこの端末に保存します。</p>
+          <label class="field"><span>会議名</span><input id="end-meeting-title-input" type="text" maxlength="80" /></label>
+          <div class="confirm-dialog__actions"><button id="cancel-end-meeting-button" class="secondary-button" type="button">会議を続ける</button><button id="confirm-end-meeting-button" class="end-button" type="button">終了して保存</button></div>
         </div>
+      </section>
+      <section id="rename-meeting-history-dialog" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-dialog-title" hidden>
+        <div class="confirm-dialog__backdrop" aria-hidden="true"></div>
+        <form id="rename-meeting-history-form" class="confirm-dialog__body">
+          <h2 id="rename-dialog-title">会議名を変更</h2>
+          <label class="field"><span>会議名</span><input id="rename-meeting-history-input" type="text" maxlength="80" required /></label>
+          <p id="rename-meeting-history-status" class="inline-alert" role="status" hidden></p>
+          <div class="confirm-dialog__actions">
+            <button id="cancel-rename-meeting-history-button" class="secondary-button" type="button">キャンセル</button>
+            <button id="save-rename-meeting-history-button" class="primary-action" type="submit">保存</button>
+          </div>
+        </form>
       </section>
       <section id="delete-meeting-history-dialog" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description" tabindex="-1" hidden aria-hidden="true">
         <div class="confirm-dialog__backdrop" aria-hidden="true"></div>

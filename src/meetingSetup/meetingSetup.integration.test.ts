@@ -11,12 +11,9 @@ describe('meeting setup to recording boundary', () => {
     `;
   });
 
-  it('creates a snapshot without starting recording, then uses that snapshot at recording start', () => {
+  it('applies the settings snapshot when the meeting starts', () => {
     let state = createInitialAppViewState();
-    const sections = { home: document.querySelector('#home') as HTMLElement, meetingSetup: document.querySelector('#setup') as HTMLElement, meeting: document.querySelector('#meeting') as HTMLElement, meetingDetail: document.createElement('section') };
-    state = transitionAppView(state, 'open-meeting-setup');
-    applyAppView(state.view, sections);
-    expect(sections.meetingSetup.hidden).toBe(false);
+    const sections = { home: document.querySelector('#home') as HTMLElement, meeting: document.querySelector('#meeting') as HTMLElement, meetingDetail: document.createElement('section') };
 
     const title = document.querySelector<HTMLInputElement>('#title')!;
     const provider = document.querySelector<HTMLSelectElement>('#provider')!;
@@ -28,11 +25,10 @@ describe('meeting setup to recording boundary', () => {
     expect(validateMeetingSetupDraft(draft)).toBeNull();
     const snapshot = createMeetingSettingsSnapshot(draft, '2026-07-19T00:00:00.000Z');
 
-    state = transitionAppView(state, 'create-meeting');
+    state = transitionAppView(state, 'start-meeting');
     applyAppView(state.view, sections);
     expect(state.view).toBe('meeting');
     expect(sections.meeting.hidden).toBe(false);
-    expect(sections.meetingSetup.hidden).toBe(true);
     expect(document.querySelector('#record')?.getAttribute('aria-pressed')).toBeNull();
 
     // Changing the form after creation must not alter the snapshot used to start.

@@ -19,7 +19,7 @@ describe('application shell markup', () => {
   });
 
   it('offers the primary new meeting action', () => {
-    expect(document.querySelector<HTMLButtonElement>('#new-meeting-button')?.textContent).toContain('新しい会議を始める');
+    expect(document.querySelector<HTMLButtonElement>('#new-meeting-button')?.textContent).toContain('新規会議');
   });
 
   it('shows a truthful empty state instead of fictional meeting history', () => {
@@ -40,23 +40,23 @@ describe('application shell markup', () => {
     const controls = document.querySelector('.meeting-controls');
     expect(controls?.querySelector('#start-button')).not.toBeNull();
     expect(controls?.querySelector('#stop-button')).not.toBeNull();
-    expect(controls?.querySelector('#end-meeting-button-footer')).not.toBeNull();
+    expect(controls?.querySelector('#end-meeting-button')).not.toBeNull();
   });
 
-  it('keeps the latest-transcript action in a separate layout region above recording controls', () => {
+  it('keeps the latest-transcript action in the pinned transcript heading', () => {
     const meetingView = document.querySelector('#meeting-view');
-    const actions = meetingView?.querySelector('.meeting-scroll-actions');
+    const actions = meetingView?.querySelector('.transcript-heading');
     const controls = meetingView?.querySelector('.meeting-controls');
     const latestButton = meetingView?.querySelector('#latest-transcript-button');
 
     expect(actions?.contains(latestButton ?? null)).toBe(true);
     expect(controls?.contains(latestButton ?? null)).toBe(false);
-    expect(actions?.parentElement).toBe(meetingView);
+    expect(actions?.parentElement).toBe(meetingView?.querySelector('.live-transcript'));
   });
 
   it('reserves a responsive layout row for the wrapping recording control bar', () => {
-    expect(styles).toMatch(/\.meeting-view\s*\{[^}]*grid-template-rows:\s*minmax\(0, 1fr\) auto;/su);
-    expect(styles).toMatch(/\.meeting-controls\s*\{[^}]*position:\s*relative;/su);
+    expect(styles).toMatch(/\.meeting-view\s*\{[^}]*grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto;/su);
+    expect(styles).toMatch(/\.panel-scroll\s*\{[^}]*overflow-y:\s*auto;/su);
     expect(styles).toMatch(/\.meeting-controls__inner\s*\{[^}]*flex-wrap:\s*wrap;/su);
   });
 
@@ -207,8 +207,7 @@ describe('application shell markup', () => {
     const deleteFlowSource = mainSource.slice(deleteFlowStart, deleteFlowEnd);
 
     expect(finalizeSource).toContain("status: 'deleted' | 'not_found'");
-    expect(finalizeSource).toContain('meetingHistoryDetailController.clear()');
-    expect(finalizeSource).toContain("transitionAppView(appState, 'open-home')");
+    expect(finalizeSource).toContain('if (viewingDeletedMeeting) returnHomeFromDetail();');
     expect(finalizeSource.match(/meetingHistoryListController\.refresh\(\)/gu)).toHaveLength(1);
     expect(finalizeSource).toContain('pageUnloading');
     expect(deleteFlowSource).toContain('meetingHistoryDeleteController.confirm(');
@@ -261,10 +260,15 @@ describe('application shell markup', () => {
     ]) expect(finalizeSource).not.toContain(runtimeState);
   });
 
-  it('places summary and transcript in the same scrolling main region', () => {
+  it('keeps the transcript scroll area separate from the summary and recording controls', () => {
     const scroller = document.querySelector('#transcript-scroll');
-    expect(scroller?.querySelector('.live-summary')).not.toBeNull();
-    expect(scroller?.querySelector('.live-transcript')).not.toBeNull();
+    expect(scroller?.parentElement?.classList.contains('live-transcript')).toBe(true);
+    expect(scroller?.querySelector('#final-transcript')).not.toBeNull();
+    expect(scroller?.querySelector('.live-summary, .meeting-controls')).toBeNull();
+    const sidebar = document.querySelector('.workspace-sidebar');
+    expect(sidebar?.querySelector('#meeting-history-list')).not.toBeNull();
+    expect(sidebar?.querySelector('#home-settings-button')).not.toBeNull();
+    expect(document.querySelector('#meeting-view')?.contains(sidebar)).toBe(false);
   });
 
   it('provides every DOM element required during application initialization', () => {

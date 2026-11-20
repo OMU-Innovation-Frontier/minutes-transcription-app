@@ -159,6 +159,7 @@ function repositoryStub(): MeetingHistoryRepository & {
     save: vi.fn(async () => undefined),
     getById: vi.fn<(meetingId: string) => Promise<MeetingRecord | null>>(),
     list: vi.fn(async () => []),
+    renameById: vi.fn(async () => false),
     deleteById: vi.fn(async () => false),
     clear: vi.fn(async () => undefined),
   };

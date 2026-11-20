@@ -119,6 +119,7 @@ function repositoryStub(): MeetingHistoryRepository & { list: ReturnType<typeof 
     save: vi.fn(async () => undefined),
     getById: vi.fn(async () => null),
     list: vi.fn<() => Promise<MeetingRecord[]>>(),
+    renameById: vi.fn(async () => false),
     deleteById: vi.fn(async () => false),
     clear: vi.fn(async () => undefined),
   };

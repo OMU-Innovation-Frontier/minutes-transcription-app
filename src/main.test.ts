@@ -40,7 +40,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('records consecutive meetings with fresh setup fields and enabled recording controls', async () => {
+it('starts consecutive meetings in one click and saves the edited title', async () => {
   vi.stubGlobal('indexedDB', {});
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
     enabled: false, provider: 'mock', apiUsed: false, intervalSeconds: 10,
@@ -49,34 +49,42 @@ it('records consecutive meetings with fresh setup fields and enabled recording c
   await import('./main');
 
   for (const title of ['First synthetic meeting', 'Second synthetic meeting']) {
+    startProvider.mockClear();
+    startProvider.mockImplementationOnce(async (options) => {
+      options.callbacks?.onTranscript?.({
+        sessionId: options.sessionId, segmentId: 'title-suggestion', sequence: 1,
+        revision: 1, text: '合成の会議内容です。', isFinal: true, language: 'ja-JP',
+        provider: 'mock', startTime: 0, endTime: 1000, createdAt: new Date().toISOString(),
+      });
+    });
     button('new-meeting-button').click();
-    expect(input('setup-title').value).toBe('新しい会議');
-    expect(input('setup-external-ack').checked).toBe(false);
-    expect(input('setup-final-summary').checked).toBe(false);
-    input('setup-title').value = title;
-    input('setup-title').dispatchEvent(new Event('input'));
-    document.getElementById('meeting-setup-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
     expect(document.documentElement.dataset.appView).toBe('meeting');
-    expect(button('start-button').disabled).toBe(false);
-    expect(button('start-button').textContent).toBe('録音を開始');
-    if (title.startsWith('First')) {
-      startProvider.mockRejectedValueOnce({ code: 'network', message: '接続失敗の合成テスト' });
-      button('start-button').click();
-      await vi.waitFor(() => expect(button('start-button').disabled).toBe(false));
-      expect(button('stop-button').disabled).toBe(true);
-      expect(document.getElementById('error')?.textContent ?? document.body.textContent).toContain('接続失敗の合成テスト');
-      startProvider.mockClear();
-    }
-    button('start-button').click();
-    await vi.waitFor(() => expect(startProvider).toHaveBeenCalledTimes(title.startsWith('First') ? 1 : 2));
+    expect(document.getElementById('meeting-title')?.textContent).toBe('新規会議');
+    await vi.waitFor(() => expect(button('end-meeting-button').disabled).toBe(false));
+    expect(startProvider).toHaveBeenCalledTimes(1);
     button('end-meeting-button').click();
+    expect(input('end-meeting-title-input').value).toBe('合成の会議内容です。');
+    input('end-meeting-title-input').value = title;
     button('confirm-end-meeting-button').click();
     await vi.waitFor(() => expect(document.documentElement.dataset.appView).toBe('meeting-detail'));
-    await vi.waitFor(() => expect(button('confirm-end-meeting-button').disabled).toBe(false));
+    expect(document.getElementById('detail-title')?.textContent).toBe(title);
+    await vi.waitFor(() => expect(button('new-meeting-button').disabled).toBe(false));
     button('detail-home-button').click();
-    input('setup-external-ack').checked = true;
-    input('setup-final-summary').checked = true;
   }
+
+  const firstMeeting = () => document.querySelector<HTMLButtonElement>('[aria-label^="「First synthetic meeting」の詳細"]');
+  firstMeeting()?.click();
+  const rename = [...document.querySelectorAll<HTMLButtonElement>('.history-entry__menu button')]
+    .find((action) => action.textContent === '名前を変更' && action.closest('li')?.contains(firstMeeting()));
+  expect(rename).toBeDefined();
+  rename?.click();
+  expect(input('rename-meeting-history-input').value).toBe('First synthetic meeting');
+  input('rename-meeting-history-input').value = '  Renamed synthetic meeting  ';
+  document.getElementById('rename-meeting-history-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+  await vi.waitFor(() => expect(document.getElementById('detail-title')?.textContent).toBe('Renamed synthetic meeting'));
+  expect(document.getElementById('detail-transcript')?.textContent).toContain('合成の会議内容です。');
+  await vi.waitFor(() => expect(document.getElementById('rename-meeting-history-dialog')?.hidden).toBe(true));
+  button('detail-home-button').click();
 
   const deleteLatest = () => document.querySelector<HTMLButtonElement>('[aria-label="「Second synthetic meeting」を削除"]');
   await vi.waitFor(() => expect(deleteLatest()?.disabled).toBe(false));
@@ -90,7 +98,7 @@ it('records consecutive meetings with fresh setup fields and enabled recording c
   button('confirm-delete-meeting-history-button').click();
   await vi.waitFor(() => expect(deleteLatest()).toBeNull());
   await vi.waitFor(() => expect(document.getElementById('delete-meeting-history-dialog')?.hidden).toBe(true));
-  expect(document.querySelector('[aria-label="「First synthetic meeting」を削除"]')).not.toBeNull();
+  expect(document.querySelector('[aria-label="「Renamed synthetic meeting」を削除"]')).not.toBeNull();
   expect(document.getElementById('meeting-history-list')?.textContent).not.toContain('Second synthetic meeting');
   expect(document.documentElement.dataset.appView).toBe('home');
 });
@@ -103,10 +111,6 @@ it('recovers an unfinished meeting after reloading without starting recording', 
   }), { status: 200 })));
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
-  button('new-meeting-button').click();
-  input('setup-title').value = 'Recovery synthetic meeting';
-  input('setup-title').dispatchEvent(new Event('input'));
-  document.getElementById('meeting-setup-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
   startProvider.mockClear();
   startProvider.mockImplementationOnce(async (options) => {
     options.callbacks?.onTranscript?.({
@@ -115,7 +119,7 @@ it('recovers an unfinished meeting after reloading without starting recording', 
       provider: 'mock', startTime: 0, endTime: 1000, createdAt: new Date().toISOString(),
     });
   });
-  button('start-button').click();
+  button('new-meeting-button').click();
   await vi.waitFor(() => expect(button('start-button').disabled).toBe(true));
   await vi.waitFor(() => expect(startProvider).toHaveBeenCalled());
   window.dispatchEvent(new Event('pagehide'));
@@ -124,7 +128,7 @@ it('recovers an unfinished meeting after reloading without starting recording', 
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
   expect(document.documentElement.dataset.appView).toBe('meeting');
-  expect(document.getElementById('meeting-title')?.textContent).toBe('Recovery synthetic meeting');
+  expect(document.getElementById('meeting-title')?.textContent).toBe('新規会議');
   expect(button('start-button').disabled).toBe(false);
   expect(startProvider).not.toHaveBeenCalled();
   expect(document.getElementById('final-transcript')?.textContent).toContain('保存する合成発言です。');
@@ -143,14 +147,13 @@ it('summarizes on button press while recording and keeps previous interim summar
   vi.stubGlobal('fetch', request);
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
-  button('new-meeting-button').click();
-  input('setup-live-summary').checked = true;
-  input('setup-live-summary').dispatchEvent(new Event('input'));
-  await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>('#meeting-setup-form button[type=submit]')!.disabled).toBe(false));
-  document.getElementById('meeting-setup-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+  button('home-settings-button').click();
+  input('setup-live-summary').click();
+  await vi.waitFor(() => expect(document.getElementById('setup-error')?.hidden).toBe(true));
+  button('settings-close-button').click();
   let options!: StartTranscriptionOptions;
   startProvider.mockImplementationOnce(async (value) => { options = value; });
-  button('start-button').click();
+  button('new-meeting-button').click();
   await vi.waitFor(() => expect(options).toBeDefined());
   const emit = (sequence: number) => options.callbacks?.onTranscript?.({
     sessionId: options.sessionId, segmentId: `manual-${sequence}`, sequence,
