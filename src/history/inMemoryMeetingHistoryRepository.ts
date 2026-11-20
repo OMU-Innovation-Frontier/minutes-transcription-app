@@ -8,9 +8,17 @@ import { parseMeetingRecord, type MeetingRecord } from './meetingRecord';
 export class InMemoryMeetingHistoryRepository implements MeetingHistoryRepository {
   private readonly records = new Map<string, MeetingRecord>();
 
-  async save(record: MeetingRecord): Promise<void> {
-    const copy = parseMeetingRecord(record);
+  async save(record: MeetingRecord, { preserveTitle = false } = {}): Promise<void> {
+    const previous = preserveTitle ? this.records.get(record.meetingId) : undefined;
+    const copy = parseMeetingRecord(previous ? { ...record, title: previous.title } : record);
     this.records.set(copy.meetingId, copy);
+  }
+
+  async renameById(meetingId: string, title: string): Promise<boolean> {
+    const record = this.records.get(meetingId);
+    if (!record) return false;
+    this.records.set(meetingId, parseMeetingRecord({ ...record, title }));
+    return true;
   }
 
   async getById(meetingId: string): Promise<MeetingRecord | null> {

@@ -42,13 +42,27 @@ export class IndexedDbMeetingHistoryRepository implements MeetingHistoryReposito
     private readonly databaseName = MEETING_HISTORY_DATABASE_NAME,
   ) {}
 
-  async save(record: MeetingRecord): Promise<void> {
+  async save(record: MeetingRecord, { preserveTitle = false } = {}): Promise<void> {
     const stored = parseForSave(record);
     const database = await this.database();
     const transaction = createTransaction(database, 'readwrite');
     const completion = transactionCompletion(transaction);
-    const request = createRequest(() => transaction.objectStore(MEETING_HISTORY_STORE_NAME).put(stored));
-    await Promise.all([requestResult(request), completion]);
+    const store = transaction.objectStore(MEETING_HISTORY_STORE_NAME);
+    const operation = preserveTitle
+      ? updateRecord(store, stored.meetingId, (previous) => previous ? { ...stored, title: previous.title } : stored)
+      : requestResult(createRequest(() => store.put(stored)));
+    await Promise.all([operation, completion]);
+  }
+
+  async renameById(meetingId: string, title: string): Promise<boolean> {
+    if (!isValidMeetingHistoryId(meetingId)) return false;
+    const database = await this.database();
+    const transaction = createTransaction(database, 'readwrite');
+    const completion = transactionCompletion(transaction);
+    const store = transaction.objectStore(MEETING_HISTORY_STORE_NAME);
+    const operation = updateRecord(store, meetingId, (record) => record && { ...record, title });
+    const [renamed] = await Promise.all([operation, completion]);
+    return renamed;
   }
 
   async getById(meetingId: string): Promise<MeetingRecord | null> {
@@ -226,6 +240,30 @@ function transactionCompletion(transaction: IDBTransaction): Promise<void> {
       '会議履歴のtransactionが中断されました。',
       transaction.error,
     ));
+  });
+}
+
+function updateRecord(
+  store: IDBObjectStore,
+  meetingId: string,
+  update: (record: MeetingRecord | null) => MeetingRecord | null,
+): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const request = createRequest(() => store.get(meetingId));
+    request.onerror = () => reject(repositoryError('request_failed', '会議履歴を読み込めませんでした。', request.error));
+    request.onsuccess = () => {
+      try {
+        const next = update(request.result === undefined ? null : parseFromDatabase(request.result));
+        if (!next) {
+          resolve(false);
+          return;
+        }
+        const write = createRequest(() => store.put(parseForSave(next)));
+        void requestResult(write).then(() => resolve(true), reject);
+      } catch (error) {
+        reject(error);
+      }
+    };
   });
 }
 

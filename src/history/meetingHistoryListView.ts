@@ -30,6 +30,7 @@ interface MeetingHistoryDisplayItem {
 
 export interface MeetingHistoryActions {
   onDelete: (meetingId: string, title: string, button: HTMLButtonElement) => void;
+  onRename?: (meetingId: string, title: string) => void;
   onPdf?: (meetingId: string) => void;
   onShare?: (meetingId: string) => void;
   disabled: (meetingId: string) => boolean;
@@ -163,6 +164,18 @@ function renderHistoryItem(
       actions.open = false;
       trigger.focus();
     });
+    const rename = deletion.onRename;
+    if (rename) {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.textContent = '名前を変更';
+      option.disabled = deletion.disabled(item.meetingId);
+      option.addEventListener('click', () => {
+        actions.open = false;
+        rename(item.meetingId, item.title);
+      });
+      panel.append(option);
+    }
     for (const [label, callback] of [['PDFとしてダウンロード', deletion.onPdf], ['共有', deletion.onShare]] as const) {
       if (!callback) continue;
       const option = document.createElement('button');

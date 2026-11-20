@@ -371,13 +371,13 @@ class RecordingRepository implements MeetingHistoryRepository {
   readonly saveCalls: MeetingRecord[] = [];
   failNextSaves = 0;
 
-  async save(record: MeetingRecord): Promise<void> {
+  async save(record: MeetingRecord, options?: { preserveTitle: boolean }): Promise<void> {
     this.saveCalls.push(record);
     if (this.failNextSaves > 0) {
       this.failNextSaves -= 1;
       throw new Error('raw IndexedDB failure');
     }
-    await this.delegate.save(record);
+    await this.delegate.save(record, options);
   }
 
   getById(meetingId: string): Promise<MeetingRecord | null> {
@@ -386,6 +386,10 @@ class RecordingRepository implements MeetingHistoryRepository {
 
   list(): Promise<MeetingRecord[]> {
     return this.delegate.list();
+  }
+
+  renameById(meetingId: string, title: string): Promise<boolean> {
+    return this.delegate.renameById(meetingId, title);
   }
 
   deleteById(meetingId: string): Promise<boolean> {

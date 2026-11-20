@@ -32,7 +32,6 @@ vi.mock('./history/indexedDbMeetingHistoryRepository', async () => {
 });
 
 const button = (id: string) => document.getElementById(id) as HTMLButtonElement;
-const input = (id: string) => document.getElementById(id) as HTMLInputElement;
 
 afterEach(() => {
   window.dispatchEvent(new Event('pagehide'));
@@ -48,13 +47,9 @@ it('recovers an unfinished meeting after reloading without starting recording', 
   }), { status: 200 })));
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
-  button('new-meeting-button').click();
-  input('setup-title').value = 'Recovery synthetic meeting';
-  input('setup-title').dispatchEvent(new Event('input'));
-  document.getElementById('meeting-setup-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
   startProvider.mockClear();
   startProvider.mockRejectedValueOnce({ code: 'network', message: 'Synthetic connection failure' });
-  button('start-button').click();
+  button('new-meeting-button').click();
   await vi.waitFor(() => expect(startProvider).toHaveBeenCalledTimes(1));
   await vi.waitFor(() => expect(button('start-button').disabled).toBe(false));
   expect(button('stop-button').disabled).toBe(true);
@@ -75,7 +70,7 @@ it('recovers an unfinished meeting after reloading without starting recording', 
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
   expect(document.documentElement.dataset.appView).toBe('meeting');
-  expect(document.getElementById('meeting-title')?.textContent).toBe('Recovery synthetic meeting');
+  expect(document.getElementById('meeting-title')?.textContent).toBe('新規会議');
   expect(button('start-button').disabled).toBe(false);
   expect(startProvider).not.toHaveBeenCalled();
   expect(document.getElementById('final-transcript')?.textContent).toContain('保存する合成発言です。');

@@ -52,14 +52,13 @@ it('summarizes on button press while recording and keeps previous interim summar
   vi.stubGlobal('fetch', request);
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
-  button('new-meeting-button').click();
-  input('setup-live-summary').checked = true;
-  input('setup-live-summary').dispatchEvent(new Event('input'));
-  await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>('#meeting-setup-form button[type=submit]')!.disabled).toBe(false));
-  document.getElementById('meeting-setup-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+  button('home-settings-button').click();
+  input('setup-live-summary').click();
+  await vi.waitFor(() => expect(document.getElementById('setup-error')?.hidden).toBe(true));
+  button('settings-close-button').click();
   let options!: StartTranscriptionOptions;
   startProvider.mockImplementationOnce(async (value) => { options = value; });
-  button('start-button').click();
+  button('new-meeting-button').click();
   await vi.waitFor(() => expect(options).toBeDefined());
   const emit = (sequence: number) => options.callbacks?.onTranscript?.({
     sessionId: options.sessionId, segmentId: `manual-${sequence}`, sequence,

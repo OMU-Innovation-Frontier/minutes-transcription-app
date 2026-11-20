@@ -229,6 +229,25 @@ describe('IndexedDbMeetingHistoryRepository list', () => {
   });
 });
 
+describe('IndexedDbMeetingHistoryRepository rename', () => {
+  it('changes only the title and preserves it when a final summary is saved', async () => {
+    const original = record('meeting-1');
+    const other = record('meeting-2');
+    await repository.save(original);
+    await repository.save(other);
+
+    await expect(repository.renameById(original.meetingId, 'Renamed synthetic meeting')).resolves.toBe(true);
+    await expect(repository.getById(original.meetingId)).resolves.toEqual({ ...original, title: 'Renamed synthetic meeting' });
+
+    const summary = recordWithSummary(original.meetingId);
+    await repository.save(summary, { preserveTitle: true });
+    await expect(repository.getById(original.meetingId)).resolves.toEqual({ ...summary, title: 'Renamed synthetic meeting' });
+    await expect(repository.getById(other.meetingId)).resolves.toEqual(other);
+    await expect(repository.renameById('missing-meeting', 'Another name')).resolves.toBe(false);
+    await expect(repository.getById('missing-meeting')).resolves.toBeNull();
+  });
+});
+
 describe('IndexedDbMeetingHistoryRepository delete and clear', () => {
   it('deletes only an existing meeting and distinguishes a missing ID', async () => {
     await repository.save(record('meeting-1'));

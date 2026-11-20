@@ -1,7 +1,8 @@
 import type { MeetingRecord } from './meetingRecord';
 
 export interface MeetingHistoryRepository {
-  save(record: MeetingRecord): Promise<void>;
+  save(record: MeetingRecord, options?: { preserveTitle: boolean }): Promise<void>;
+  renameById(meetingId: string, title: string): Promise<boolean>;
   getById(meetingId: string): Promise<MeetingRecord | null>;
   list(): Promise<MeetingRecord[]>;
   deleteById(meetingId: string): Promise<boolean>;
