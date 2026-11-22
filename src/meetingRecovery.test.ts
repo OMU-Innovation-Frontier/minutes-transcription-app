@@ -49,10 +49,10 @@ it('recovers an unfinished meeting after reloading without starting recording', 
   await import('./main');
   startProvider.mockClear();
   startProvider.mockRejectedValueOnce({ code: 'network', message: 'Synthetic connection failure' });
-  button('new-meeting-button').click();
+  button('workspace-start-button').click();
   await vi.waitFor(() => expect(startProvider).toHaveBeenCalledTimes(1));
   await vi.waitFor(() => expect(button('start-button').disabled).toBe(false));
-  expect(button('stop-button').disabled).toBe(true);
+  expect(button('start-button').dataset.mode).toBe('start');
   startProvider.mockClear();
   startProvider.mockImplementationOnce(async (options) => {
     options.callbacks?.onTranscript?.({
@@ -62,7 +62,7 @@ it('recovers an unfinished meeting after reloading without starting recording', 
     });
   });
   button('start-button').click();
-  await vi.waitFor(() => expect(button('start-button').disabled).toBe(true));
+  await vi.waitFor(() => expect(button('start-button').dataset.mode).toBe('stop'));
   await vi.waitFor(() => expect(startProvider).toHaveBeenCalled());
   window.dispatchEvent(new Event('pagehide'));
   vi.resetModules();

@@ -164,9 +164,44 @@ export async function validateExistingFile(
     const resolvedFile = await realpath(filePath);
     const fileStat = await stat(resolvedFile);
     if (!fileStat.isFile()) throw new Error('not a file');
-    const allowed = allowedRoots.some((root) => isWithin(resolve(root), resolvedFile));
+    const resolvedRoots = await Promise.all(allowedRoots.map(async (root) => {
+      try {
+        return await realpath(resolve(root));
+      } catch {
+        return resolve(root);
+      }
+    }));
+    const allowed = resolvedRoots.some((root) => isWithin(root, resolvedFile));
     if (!allowed) throw new Error('outside allowed roots');
     return resolvedFile;
+  } catch (error) {
+    if (error instanceof LocalSttError) throw error;
+    throw new LocalSttError(code, safeMessage, { cause: error });
+  }
+}
+
+export async function validateExistingDirectory(
+  directoryPath: string,
+  allowedRoots: readonly string[],
+  code: string,
+  safeMessage: string,
+): Promise<string> {
+  if (!directoryPath || !isAbsolute(directoryPath) || allowedRoots.length === 0) {
+    throw new LocalSttError(code, safeMessage);
+  }
+  try {
+    const resolvedDirectory = await realpath(directoryPath);
+    const directoryStat = await stat(resolvedDirectory);
+    if (!directoryStat.isDirectory()) throw new Error('not a directory');
+    const resolvedRoots = await Promise.all(allowedRoots.map(async (root) => {
+      try {
+        return await realpath(resolve(root));
+      } catch {
+        return resolve(root);
+      }
+    }));
+    if (!resolvedRoots.some((root) => isWithin(root, resolvedDirectory))) throw new Error('outside allowed roots');
+    return resolvedDirectory;
   } catch (error) {
     if (error instanceof LocalSttError) throw error;
     throw new LocalSttError(code, safeMessage, { cause: error });

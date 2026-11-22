@@ -1,6 +1,10 @@
 import { resolve } from 'node:path';
 import { LocalAudioConverter } from './audioConverter.js';
 import { runLocalBenchmarkSuite, type LocalBenchmarkCase } from './benchmarkSuite.js';
+import {
+  resolveConfiguredLocalWhisperArtifact,
+  validateLocalWhisperArtifact,
+} from './localWhisperArtifact.js';
 import { getLocalModelDefinition } from './localModelRegistry.js';
 import { LocalProcessManager } from './localProcessManager.js';
 import { LocalSttError } from './localSttTypes.js';
@@ -28,7 +32,8 @@ async function main(): Promise<void> {
   const modelRoot = resolve(root, 'models');
   const inputRoot = resolve(root, 'input');
   const resultRoot = resolve(root, 'results');
-  const executablePath = resolve(binaryRoot, 'v1.9.1/Release/whisper-cli.exe');
+  const artifact = resolveConfiguredLocalWhisperArtifact(binaryRoot);
+  const executablePath = await validateLocalWhisperArtifact(artifact, binaryRoot);
   const modelId = process.env.LOCAL_STT_MODEL_ID?.trim() || 'whisper-base-q5_1';
   const model = getLocalModelDefinition(modelId);
   if (!model || model.provider !== 'local-whisper') {

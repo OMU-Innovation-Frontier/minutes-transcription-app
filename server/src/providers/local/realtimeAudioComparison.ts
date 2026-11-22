@@ -8,9 +8,12 @@ import { LocalProcessManager, validateExistingFile } from './localProcessManager
 import {
   LOCAL_WHISPER_MODEL_ID,
   SMALL_Q5_1_SHA256,
-  WHISPER_CLI_SHA256,
   runTimestampedWhisperFile,
 } from './localWhisperRuntime.js';
+import {
+  resolveLocalWhisperArtifact,
+  validateLocalWhisperArtifact,
+} from './localWhisperArtifact.js';
 import { LocalSttError } from './localSttTypes.js';
 import {
   hashText,
@@ -61,6 +64,9 @@ export interface RealtimeAudioComparisonOptions {
   localRoot: string;
   debugAudioDirectory: string;
   timeoutMs: number;
+  executablePath?: string;
+  executableSha256?: string;
+  platform?: NodeJS.Platform;
   showTranscript?: boolean;
   saveResult?: boolean;
 }
@@ -166,8 +172,16 @@ export async function compareRealtimeDebugAudio(
   const languageMatch = language !== undefined;
   const argumentMatch = actualProfile !== undefined
     && equalArgumentProfiles(metadata.whisperArgumentProfile, actualProfile);
+  const binaryRoot = resolve(localRoot, 'bin');
+  const artifact = resolveLocalWhisperArtifact({
+    binaryRoot,
+    executablePath: options.executablePath,
+    executableSha256: options.executableSha256,
+    platform: options.platform,
+  });
   const configurationMatches = modelMatch && languageMatch && argumentMatch
-    && metadata.whisperCliSha256 === WHISPER_CLI_SHA256;
+    && artifact.expectedSha256 !== undefined
+    && metadata.whisperCliSha256 === artifact.expectedSha256;
   if (!language) {
     return await finalizeResult(options, debugRoot, wavPath, baseResult({
       wavFileName: basename(wavPath), wavSha256, metadataWavSha256: metadata.wavSha256,
@@ -182,17 +196,15 @@ export async function compareRealtimeDebugAudio(
     }));
   }
 
-  const binaryRoot = resolve(localRoot, 'bin');
   const modelRoot = resolve(localRoot, 'models');
-  const executablePath = resolve(binaryRoot, 'v1.9.1/Release/whisper-cli.exe');
   const modelPath = resolve(modelRoot, 'ggml-small-q5_1.bin');
   const processes = new LocalProcessManager(1);
   try {
-    const [actualModelHash, actualExecutableHash] = await Promise.all([
+    const [actualModelHash, executablePath] = await Promise.all([
       sha256File(await validateExistingFile(modelPath, [modelRoot], 'local_model_missing', 'The Local Whisper model is unavailable.')),
-      sha256File(await validateExistingFile(executablePath, [binaryRoot], 'local_executable_missing', 'The whisper.cpp executable is unavailable.')),
+      validateLocalWhisperArtifact(artifact, binaryRoot),
     ]);
-    if (actualModelHash !== SMALL_Q5_1_SHA256 || actualExecutableHash !== WHISPER_CLI_SHA256) {
+    if (actualModelHash !== SMALL_Q5_1_SHA256) {
       throw new LocalSttError('local_integrity_mismatch', 'Local Whisper integrity verification failed.');
     }
     const recognition = await runTimestampedWhisperFile({

@@ -2,6 +2,8 @@
 
 この経路は実験用です。Browser認識、フロントMock、WebSocketモックを既定動作のまま残し、`LOCAL_STT_ENABLED=false`ではLocal Whisperを起動しません。`STT_EXTERNAL_ENABLED=false`を維持し、音声認識時の外部通信、モデル取得、外部API呼び出しは行いません。
 
+Apple Silicon向けMLX Whisperは、別のオプトインのローカル推論経路です。設定と検証は [macOSセットアップ](SETUP_MACOS.md) を参照してください。以下のCLIおよびデバッグ音声の試験はwhisper.cpp経路用です。
+
 ## 起動
 
 PowerShellでサーバーだけに明示設定を渡します。
@@ -14,7 +16,7 @@ $env:LOCAL_STT_THREADS='4'
 pnpm run dev:server
 ```
 
-別のターミナルで`pnpm run dev`を実行し、認識方式から「Local Whisper small」を選びます。サーバーは既存の`server/data/local-stt/models/ggml-small-q5_1.bin`と`server/data/local-stt/bin/v1.9.1/Release/whisper-cli.exe`だけを使用し、初回セッション開始時に配置場所とSHA-256を検証します。
+別のターミナルで`pnpm run dev`を実行し、認識方式から「Local Whisper」を選びます。サーバーは既存の`server/data/local-stt/models/ggml-small-q5_1.bin`と`server/data/local-stt/bin/v1.9.1/Release/whisper-cli.exe`だけを使用し、初回セッション開始時に配置場所とSHA-256を検証します。
 
 ## 音声と発話確定
 
@@ -85,7 +87,7 @@ pnpm run compare:local:realtime -- "server/data/local-stt/debug/realtime-audio/r
 ## 実マイクでの切り分け手順
 
 1. `LOCAL_STT_ENABLED=true`、`LOCAL_STT_DEBUG_AUDIO=true`、`STT_EXTERNAL_ENABLED=false`でサーバーを起動します。
-2. Local Whisper smallを選び、「今日はローカル音声認識の動作確認を行います。人工知能と音声認識について話しています。」と話します。
+2. Local Whisperを選び、「今日はローカル音声認識の動作確認を行います。人工知能と音声認識について話しています。」と話します。
 3. 文章途中で約1秒だけ間を空け、1300 ms未満では発話が分割されないか確認します。
 4. 話し終わって2秒黙り、final transcriptを確認します。
 5. 保存されたWAVとmetadataを確認し、比較CLIを実行します。

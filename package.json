@@ -18,6 +18,8 @@
     "build:frontend": "tsc -b && vite build --configLoader runner",
     "build:server": "tsc -p server/tsconfig.json",
     "preview": "vite preview",
+    "verify:environment": "node scripts/verify-dev-environment.mjs",
+    "check:share": "node scripts/check-share-readiness.mjs",
     "typecheck": "tsc -b --pretty false && tsc -p server/tsconfig.json --noEmit --pretty false",
     "lint": "eslint .",
     "test": "vitest run"

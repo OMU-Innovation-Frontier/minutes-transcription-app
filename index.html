@@ -9,18 +9,21 @@
   <body>
     <div class="app-shell">
       <div id="workspace" class="workspace">
-        <aside class="workspace-sidebar" aria-label="会議メニュー">
+        <aside id="workspace-sidebar" class="workspace-sidebar" aria-label="会議メニュー">
           <div class="sidebar-header">
             <div class="brand"><span class="brand__mark" aria-hidden="true">M</span><span>Minutes</span></div>
-            <button id="new-meeting-button" class="primary-action" type="button"><span aria-hidden="true">＋</span> 新規会議</button>
+            <button id="new-meeting-button" class="workspace-icon" type="button" aria-label="新しい議事録" title="新しい議事録" ><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
             <div id="home-active-meeting" hidden>
               <button id="resume-meeting-button" class="secondary-button" type="button">現在の会議</button>
             </div>
             <button id="history-toggle" class="quiet-button" type="button" aria-expanded="false" aria-controls="sidebar-history">履歴</button>
-            <button id="home-settings-button" class="quiet-button" type="button" aria-haspopup="dialog">設定</button>
+            <button id="home-settings-button" class="workspace-icon" type="button" aria-label="設定" title="設定" aria-haspopup="dialog"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 5v4m8 1v4m-6 1v4"/></svg></button>
+            <button id="sidebar-collapse-button" class="workspace-icon" type="button" aria-label="議事録一覧を閉じる" title="議事録一覧を閉じる" aria-controls="workspace-sidebar"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
           </div>
           <section id="sidebar-history" class="meeting-history" aria-labelledby="history-title">
             <h2 id="history-title" tabindex="-1">会議履歴</h2>
+            <label class="history-search"><span class="sr-only">議事録を検索</span><input id="meeting-search-input" type="search" placeholder="会議名、文字起こしを検索" autocomplete="off" /></label>
+            <p id="history-search-empty" class="history-status" role="status" hidden>一致する議事録がありません。</p>
             <p id="home-history-notification" class="inline-alert" role="status" aria-live="polite" tabindex="-1" hidden aria-hidden="true"></p>
             <div id="home-history-status" class="history-status" role="status" aria-live="polite">
               <p id="home-history-status-message">会議履歴を読み込んでいます。</p>
@@ -33,11 +36,13 @@
         </aside>
 
         <main class="workspace-main">
+          <button id="sidebar-open-button" class="workspace-icon" type="button" aria-label="議事録一覧を開く" title="議事録一覧を開く" aria-controls="workspace-sidebar" hidden><svg class="" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
           <section id="home-view" class="app-view home-view" aria-labelledby="home-title">
             <div class="home-hero">
               <span class="brand__mark" aria-hidden="true">M</span>
               <h1 id="home-title">会議を記録する</h1>
-              <p>「新規会議」で録音を開始します。</p>
+              <p id="home-description">準備ができたら録音を始めます。</p>
+              <button id="workspace-start-button" class="workspace-icon workspace-start" type="button" aria-label="新しい議事録を開始" title="新しい議事録を開始"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7Z"/></svg></button>
               <div id="home-connection-error" class="inline-alert" role="alert" hidden></div>
             </div>
           </section>
@@ -83,30 +88,33 @@
                     </div>
                   </div>
                 </section>
-                <section class="live-summary" aria-labelledby="summary-title">
+                <section id="summary-sheet" class="live-summary" aria-labelledby="summary-title">
                   <div class="content-heading">
                     <h2 id="summary-title">途中要約</h2>
-                    <span id="summary-provider-status" class="subtle-status">要約を確認中</span>
+                    <button id="summary-toggle-button" class="quiet-button summary-toggle" type="button" aria-expanded="false" aria-controls="summary-sheet-content">要約を表示</button>
                   </div>
-                  <button id="summarize-now-button" type="button" class="secondary-button" disabled>ここまでを要約</button>
-                  <p id="manual-summary-status" role="status" aria-live="polite"></p>
-                  <div class="panel-scroll" tabindex="0" role="region" aria-label="途中要約の内容">
-                    <details id="live-summary-details" class="summary-details" open>
-                      <summary>現在の簡易要約</summary>
-                      <div id="summary-empty" class="summary-empty">
-                        <p>「ここまでを要約」を押すと、ここに要約が表示されます。</p>
-                      </div>
-                      <div id="summary-content" class="summary-content" hidden>
-                        <p id="summary-topic" class="summary-topic"></p>
-                        <div class="summary-sections">
-                          <section><h3>要点</h3><ul id="summary-points"></ul></section>
-                          <section><h3>決まったこと</h3><ul id="summary-decisions"></ul></section>
-                          <section><h3>次に行うこと</h3><ul id="summary-actions"></ul></section>
-                          <section><h3>確認が必要なこと</h3><ul id="summary-questions"></ul></section>
+                  <div id="summary-sheet-content" class="summary-sheet-content" hidden>
+                    <span id="summary-provider-status" class="subtle-status">要約を確認中</span>
+                    <button id="summarize-now-button" type="button" class="secondary-button" disabled>ここまでを要約</button>
+                    <p id="manual-summary-status" role="status" aria-live="polite"></p>
+                    <div class="panel-scroll" tabindex="0" role="region" aria-label="途中要約の内容">
+                      <details id="live-summary-details" class="summary-details" open>
+                        <summary>現在の簡易要約</summary>
+                        <div id="summary-empty" class="summary-empty">
+                          <p>「ここまでを要約」を押すと、ここに要約が表示されます。</p>
                         </div>
-                      </div>
-                    </details>
-                    <div id="interim-summary-history" aria-label="これまでの途中要約"></div>
+                        <div id="summary-content" class="summary-content" hidden>
+                          <p id="summary-topic" class="summary-topic"></p>
+                          <div class="summary-sections">
+                            <section><h3>要点</h3><ul id="summary-points"></ul></section>
+                            <section><h3>決まったこと</h3><ul id="summary-decisions"></ul></section>
+                            <section><h3>次に行うこと</h3><ul id="summary-actions"></ul></section>
+                            <section><h3>確認が必要なこと</h3><ul id="summary-questions"></ul></section>
+                          </div>
+                        </div>
+                      </details>
+                      <div id="interim-summary-history" aria-label="これまでの途中要約"></div>
+                    </div>
                   </div>
                 </section>
             </div>
@@ -121,8 +129,7 @@
                   </div>
                   <output id="level-label" class="sr-only">0%</output>
                 </div>
-                <button id="start-button" class="control-button control-button--start" type="button">録音を開始</button>
-                <button id="stop-button" class="control-button" type="button" disabled>一時停止</button>
+                <button id="start-button" class="control-button control-button--start workspace-icon" type="button" data-mode="start" aria-label="録音を開始" title="録音を開始"><svg class="record-start-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7Z"/></svg><svg class="record-stop-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg></button>
                 <button id="end-meeting-button" class="control-button control-button--end" type="button">会議を終了</button>
               </div>
             </footer>
@@ -201,7 +208,7 @@
                 <div><span>再接続試行</span><strong id="reconnect-attempt">—</strong></div>
               </div>
               <div id="local-whisper-stats" class="developer-status-grid" hidden>
-                <div><span>モデル</span><strong id="local-whisper-model">whisper-small-q5_1</strong></div>
+                <div><span>モデル</span><strong id="local-whisper-model">—</strong></div>
                 <div><span>言語</span><strong id="local-whisper-language">日本語</strong></div>
                 <div><span>認識待ち</span><strong id="local-whisper-queue">0</strong></div>
                 <div><span>音声時間</span><strong id="local-whisper-audio-duration">—</strong></div>

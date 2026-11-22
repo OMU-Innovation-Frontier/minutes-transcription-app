@@ -35,6 +35,13 @@ export interface ServerConfig {
   maxAudioSecondsPerMonth?: number;
   maxConcurrentExternalSessions?: number;
   localSttEnabled: boolean;
+  localSttEngine: 'whisper-cpp' | 'mlx-whisper';
+  localSttExecutable?: string;
+  localSttExecutableSha256?: string;
+  localSttMlxPython?: string;
+  localSttMlxPythonSha256?: string;
+  localSttMlxModelDirectory?: string;
+  localSttMlxModelSha256?: string;
   localSttModel: string;
   localSttThreads: number;
   localSttMaxUtteranceMs: number;
@@ -69,6 +76,7 @@ export interface ServerConfig {
 }
 
 export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+  const localSttEngine = readLocalSttEngine(env.LOCAL_STT_ENGINE);
   return {
     host: env.STT_HOST || '127.0.0.1',
     port: readInteger(env.STT_PORT ?? env.PORT, 8787, 0, 65_535),
@@ -118,7 +126,15 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
       1_000,
     ),
     localSttEnabled: readBoolean(env.LOCAL_STT_ENABLED, false),
-    localSttModel: env.LOCAL_STT_MODEL?.trim() || 'small-q5_1',
+    localSttEngine,
+    localSttModel: env.LOCAL_STT_MODEL?.trim()
+      || (localSttEngine === 'mlx-whisper' ? 'large-v3-turbo' : 'small-q5_1'),
+    localSttExecutable: readOptionalString(env.LOCAL_STT_EXECUTABLE),
+    localSttExecutableSha256: readOptionalString(env.LOCAL_STT_EXECUTABLE_SHA256),
+    localSttMlxPython: readOptionalString(env.LOCAL_STT_MLX_PYTHON),
+    localSttMlxPythonSha256: readOptionalString(env.LOCAL_STT_MLX_PYTHON_SHA256),
+    localSttMlxModelDirectory: readOptionalString(env.LOCAL_STT_MLX_MODEL_DIR),
+    localSttMlxModelSha256: readOptionalString(env.LOCAL_STT_MLX_MODEL_SHA256),
     localSttThreads: readInteger(env.LOCAL_STT_THREADS, 4, 1, 32),
     localSttMaxUtteranceMs: readInteger(env.LOCAL_STT_MAX_UTTERANCE_MS, 20_000, 1_000, 120_000),
     localSttSilenceMs: readInteger(env.LOCAL_STT_SILENCE_MS, 1_300, 200, 10_000),
@@ -173,6 +189,13 @@ function readSttProvider(value: string | undefined): SttProviderId {
     'stt_provider_unsupported',
     `Unsupported STT_PROVIDER value: ${configured}. Allowed values are local, mock, fun-asr, and groq-whisper.`,
   );
+}
+
+function readLocalSttEngine(value: string | undefined): 'whisper-cpp' | 'mlx-whisper' {
+  const normalized = value?.trim();
+  if (!normalized || normalized === 'whisper-cpp') return 'whisper-cpp';
+  if (normalized === 'mlx-whisper') return 'mlx-whisper';
+  throw new RangeError('LOCAL_STT_ENGINE must be whisper-cpp or mlx-whisper.');
 }
 
 function readInteger(value: string | undefined, fallback: number, minimum: number, maximum: number): number {

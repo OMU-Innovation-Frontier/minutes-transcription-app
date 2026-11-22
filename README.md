@@ -44,7 +44,7 @@ No Alibaba account, API key, Workspace ID, Free Quota Only setting, payment meth
 
 - home / meeting / meeting-detailの3画面
 - 日本語・英語のリアルタイム文字起こし
-- ブラウザー認識、決定論的Mock、WebSocket Mock、Local Whisper small
+- ブラウザー認識、決定論的Mock、WebSocket Mock、Local Whisper
 - 16 kHz mono PCM16、VAD、audio_ack、PendingAudioQueue、resume / reconnect、stop flush
 - Whisper原文の`rawText`と、安全検証後の`correctedText`の分離保持
 - 外部送信しないMock整文、整文状態、`uncertainParts`
@@ -116,11 +116,11 @@ LOCAL_STT_DEBUG_AUDIO=false
 
 ### STT provider境界
 
-Node.jsサーバーの上位処理は`SttProvider`だけを扱います。セッション設定、sequence付き音声チャンク、partial/finalを含む共通結果、停止、破棄がこの境界です。Local Whisperは`LocalWhisperServerProvider`内でVADと`whisper-cli.exe`実行を行い、実在するfinalだけを共通結果へ変換します。
+Node.jsサーバーの上位処理は`SttProvider`だけを扱います。セッション設定、sequence付き音声チャンク、partial/finalを含む共通結果、停止、破棄がこの境界です。Local Whisperは`LocalWhisperServerProvider`内でVADを行い、既定のwhisper.cppまたは明示設定されたApple Silicon向けMLX Whisperへ渡し、実在するfinalだけを共通結果へ変換します。
 
 将来クラウドSTTを追加する場合は`server/src/providers/providerFactory.ts`へ新しい`SttProvider`実装を登録します。WebSocket、`TranscriptStore`、整文、要約、IndexedDB、UIはprovider固有SDKを直接参照しません。クラウド接続、APIキー、モデル、課金パッケージは現在追加されていません。
 
-詳しいWindows手順は[SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md)、Local Whisperの構成は[LOCAL_WHISPER_REALTIME.md](docs/LOCAL_WHISPER_REALTIME.md)を参照してください。
+詳しい手順は[Windowsセットアップ](docs/SETUP_WINDOWS.md)と[macOSセットアップ](docs/SETUP_MACOS.md)、Local Whisperの構成は[LOCAL_WHISPER_REALTIME.md](docs/LOCAL_WHISPER_REALTIME.md)を参照してください。
 
 ### 外部送信しないMock整文を使う
 
@@ -175,6 +175,7 @@ powershell -ExecutionPolicy Bypass -File scripts\check-share-readiness.ps1
 ## 開発文書
 
 - [Windowsセットアップ](docs/SETUP_WINDOWS.md)
+- [macOSセットアップ](docs/SETUP_MACOS.md)
 - [開発ガイド](docs/DEVELOPMENT.md)
 - [アーキテクチャ](docs/ARCHITECTURE.md)
 - [プライバシー](docs/PRIVACY.md)

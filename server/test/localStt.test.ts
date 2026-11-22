@@ -61,7 +61,7 @@ describe('local path and process safety', () => {
     const disabled = new LocalRealtimeMetricsRecorder(false, root);
     disabled.record({
       sessionId: 'disabled', utteranceId: 'u0', sequenceStart: 0, sequenceEnd: 0,
-      audioDurationMs: 1_000, model: 'whisper-small-q5_1', language: 'ja', threadCount: 4,
+      audioDurationMs: 1_000, model: 'whisper-small-q5_1', engine: 'whisper-cpp', language: 'ja', threadCount: 4,
       createdAt: new Date().toISOString(),
     });
     await disabled.close();
@@ -73,7 +73,7 @@ describe('local path and process safety', () => {
     enabled.record({
       sessionId: 'enabled', utteranceId: 'u1', sequenceStart: 0, sequenceEnd: 2,
       audioDurationMs: 2_000, processingTimeMs: 1_000, realTimeFactor: 0.5,
-      model: 'whisper-small-q5_1', language: 'ja', threadCount: 4,
+      model: 'whisper-small-q5_1', engine: 'whisper-cpp', language: 'ja', threadCount: 4,
       createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
     });
     await enabled.close();

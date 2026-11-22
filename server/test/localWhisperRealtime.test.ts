@@ -101,6 +101,35 @@ describe('Local Whisper invocation and provider boundary', () => {
     expect(statuses).toHaveBeenCalledWith(expect.objectContaining({ state: 'completed' }));
   });
 
+  it('exposes the selected engine model without changing the Local Whisper wire provider', async () => {
+    const jobs: LocalWhisperJob[] = [];
+    const runtime = fakeRuntime(jobs, {
+      modelId: 'whisper-large-v3-turbo-mlx', engineId: 'mlx-whisper', threadCount: null,
+    });
+    const provider = new LocalWhisperServerProvider(runtime, { vad: {} });
+    const transcripts = vi.fn();
+    const statuses = vi.fn();
+    provider.onTranscript(transcripts);
+    provider.onStatus(statuses);
+    await provider.startSession({ sessionId: 'mlx-session', language: 'ja', mimeType: LOCAL_PCM_MIME_TYPE });
+    await provider.sendAudio({
+      sessionId: 'mlx-session', sequence: 0,
+      audio: pcm([...samples(500, 0.2), ...samples(1_300, 0)]),
+      metadata: { capturedAt: 1, sampleRate: 16_000, channels: 1, encoding: 'pcm_s16le', frameCount: 28_800 },
+    });
+    jobs[0]!.onCompleted({
+      transcript: 'MLXです', segments: [{ startMs: 0, endMs: 500, text: 'MLXです' }],
+      audioDurationMs: 1_500, processingTimeMs: 200, realTimeFactor: 0.13,
+      queueWaitTimeMs: 0, totalLatencyMs: 200, processExitCode: 0,
+      unparsedOutputLineCount: 0, completedAt: Date.now(),
+    });
+    expect(transcripts).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'local-whisper', model: 'whisper-large-v3-turbo-mlx',
+    }));
+    expect(statuses).toHaveBeenCalledWith(expect.objectContaining({ model: 'whisper-large-v3-turbo-mlx' }));
+    expect(provider.getMetricsSnapshot()[0]).toMatchObject({ engine: 'mlx-whisper', threadCount: null });
+  });
+
   it('rejects missing PCM metadata and maps local availability errors to safe provider errors', async () => {
     const jobs: LocalWhisperJob[] = [];
     const provider = new LocalWhisperServerProvider(fakeRuntime(jobs), { vad: {} });
@@ -131,6 +160,15 @@ describe('Local Whisper invocation and provider boundary', () => {
       maxSessions: 1,
       processTimeoutMs: 1_000,
       debugAudioStore,
+      engine: {
+        descriptor: {
+          id: 'whisper-cpp', modelId: 'whisper-small-q5_1', threadCount: 4,
+          debugArtifacts: { modelSha256: '0'.repeat(64), executableSha256: '1'.repeat(64) },
+        },
+        async initialize() {},
+        async transcribe(): Promise<never> { throw new Error('must not transcribe after the capture fails'); },
+        async close() {},
+      },
     });
     const utterance = new PcmUtteranceSegmenter().accept(
       0,
@@ -160,8 +198,14 @@ describe('Local Whisper invocation and provider boundary', () => {
   });
 });
 
-function fakeRuntime(jobs: LocalWhisperJob[]): LocalWhisperRuntime {
+function fakeRuntime(
+  jobs: LocalWhisperJob[],
+  descriptor: { modelId: string; engineId: string; threadCount: number | null } = {
+    modelId: 'whisper-small-q5_1', engineId: 'whisper-cpp', threadCount: 4,
+  },
+): LocalWhisperRuntime {
   return {
+    ...descriptor,
     queueLength: 0,
     async registerSession() {},
     unregisterSession() {},

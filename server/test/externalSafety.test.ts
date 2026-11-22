@@ -14,6 +14,8 @@ describe('external STT safety policy', () => {
     expect(config.provider).toBe('local');
     expect(config.externalEnabled).toBe(false);
     expect(config.localSttEnabled).toBe(false);
+    expect(config.localSttEngine).toBe('whisper-cpp');
+    expect(config.localSttModel).toBe('small-q5_1');
     expect(() => assertExternalSttMayStart(config)).toThrowError(
       expect.objectContaining({ code: 'external_stt_disabled' }),
     );
@@ -28,6 +30,16 @@ describe('external STT safety policy', () => {
     expect(() => loadServerConfig({ STT_PROVIDER: 'unknown-cloud' })).toThrowError(
       expect.objectContaining({ code: 'stt_provider_unsupported' }),
     );
+  });
+
+  it('selects the MLX model defaults only when the MLX engine is explicit', () => {
+    const config = loadServerConfig({ LOCAL_STT_ENGINE: 'mlx-whisper' });
+    expect(config.localSttEngine).toBe('mlx-whisper');
+    expect(config.localSttModel).toBe('large-v3-turbo');
+  });
+
+  it('does not silently replace an invalid Local Whisper engine', () => {
+    expect(() => loadServerConfig({ LOCAL_STT_ENGINE: 'typo' })).toThrow(/LOCAL_STT_ENGINE/u);
   });
 
   it('fails safely when explicitly enabled without an API key', () => {

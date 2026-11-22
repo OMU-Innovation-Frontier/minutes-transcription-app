@@ -47,6 +47,15 @@ it('starts consecutive meetings in one click and saves the edited title', async 
   }), { status: 200 })));
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
+  startProvider.mockClear();
+  button('sidebar-collapse-button').click();
+  expect(document.getElementById('workspace-sidebar')?.hidden).toBe(true);
+  expect(document.activeElement).toBe(button('sidebar-open-button'));
+  button('sidebar-open-button').click();
+  expect(document.getElementById('workspace-sidebar')?.hidden).toBe(false);
+  button('new-meeting-button').click();
+  expect(document.activeElement).toBe(button('workspace-start-button'));
+  expect(startProvider).not.toHaveBeenCalled();
 
   for (const title of ['First synthetic meeting', 'Second synthetic meeting']) {
     startProvider.mockClear();
@@ -57,11 +66,19 @@ it('starts consecutive meetings in one click and saves the edited title', async 
         provider: 'mock', startTime: 0, endTime: 1000, createdAt: new Date().toISOString(),
       });
     });
-    button('new-meeting-button').click();
+    button('workspace-start-button').click();
     expect(document.documentElement.dataset.appView).toBe('meeting');
     expect(document.getElementById('meeting-title')?.textContent).toBe('新規会議');
     await vi.waitFor(() => expect(button('end-meeting-button').disabled).toBe(false));
     expect(startProvider).toHaveBeenCalledTimes(1);
+    expect(button('start-button').dataset.mode).toBe('stop');
+    button('start-button').click();
+    await vi.waitFor(() => {
+      expect(button('start-button').dataset.mode).toBe('start');
+      expect(button('start-button').disabled).toBe(false);
+    });
+    expect(document.documentElement.dataset.appView).toBe('meeting');
+    expect(button('start-button').getAttribute('aria-label')).toBe('録音を再開');
     button('end-meeting-button').click();
     expect(input('end-meeting-title-input').value).toBe('合成の会議内容です。');
     input('end-meeting-title-input').value = title;
@@ -119,8 +136,8 @@ it('recovers an unfinished meeting after reloading without starting recording', 
       provider: 'mock', startTime: 0, endTime: 1000, createdAt: new Date().toISOString(),
     });
   });
-  button('new-meeting-button').click();
-  await vi.waitFor(() => expect(button('start-button').disabled).toBe(true));
+  button('workspace-start-button').click();
+  await vi.waitFor(() => expect(button('start-button').dataset.mode).toBe('stop'));
   await vi.waitFor(() => expect(startProvider).toHaveBeenCalled());
   window.dispatchEvent(new Event('pagehide'));
   vi.resetModules();
@@ -153,7 +170,7 @@ it('summarizes on button press while recording and keeps previous interim summar
   button('settings-close-button').click();
   let options!: StartTranscriptionOptions;
   startProvider.mockImplementationOnce(async (value) => { options = value; });
-  button('new-meeting-button').click();
+  button('workspace-start-button').click();
   await vi.waitFor(() => expect(options).toBeDefined());
   const emit = (sequence: number) => options.callbacks?.onTranscript?.({
     sessionId: options.sessionId, segmentId: `manual-${sequence}`, sequence,
@@ -164,11 +181,14 @@ it('summarizes on button press while recording and keeps previous interim summar
   button('finalize-sentence-button').click();
   await vi.waitFor(() => expect(button('summarize-now-button').disabled).toBe(false));
   expect(version).toBe(0);
+  expect(document.getElementById('summary-sheet-content')?.hidden).toBe(true);
+  button('summary-toggle-button').click();
+  expect(document.getElementById('summary-sheet-content')?.hidden).toBe(false);
   button('summarize-now-button').click();
   button('summarize-now-button').click();
   await vi.waitFor(() => expect(document.getElementById('interim-summary-history')?.childElementCount).toBe(1));
   expect(version).toBe(1);
-  expect(button('stop-button').disabled).toBe(false);
+  expect(button('start-button').dataset.mode).toBe('stop');
   expect(button('summarize-now-button').disabled).toBe(true);
   emit(2);
   button('finalize-sentence-button').click();

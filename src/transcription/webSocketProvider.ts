@@ -115,7 +115,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
   constructor(dependencies: WebSocketProviderDependencies = {}) {
     this.requestedProvider = dependencies.mode ?? 'server-default';
     this.id = this.requestedProvider === 'server-default' ? 'websocket' : this.requestedProvider;
-    this.label = this.requestedProvider === 'local-whisper' ? 'Local Whisper small'
+    this.label = this.requestedProvider === 'local-whisper' ? 'Local Whisper'
       : this.requestedProvider === 'groq-whisper' ? 'Groq Whisper（無料枠）' : 'WebSocketサーバー認識';
     this.audioCaptureMode = this.requestedProvider === 'server-default' ? 'media-recorder' as const : 'pcm16-16khz' as const;
     this.url = dependencies.url ?? serverWebSocketUrl();

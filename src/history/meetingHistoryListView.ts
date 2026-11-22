@@ -8,6 +8,7 @@ export interface CurrentPageMeetingHistoryItem {
   utteranceCount: number;
   hasFinalSummary: boolean;
   openDetail: () => void;
+  searchableText?: readonly string[];
 }
 
 export interface MeetingHistoryListElements {
@@ -16,6 +17,7 @@ export interface MeetingHistoryListElements {
   status: HTMLElement;
   statusMessage: HTMLElement;
   retryButton: HTMLButtonElement;
+  searchEmpty?: HTMLElement;
 }
 
 interface MeetingHistoryDisplayItem {
@@ -43,12 +45,26 @@ export function renderMeetingHistoryList(
   formatDate: (isoDate: string) => string = formatHistoryDate,
   onOpenPersisted?: (meetingId: string) => void,
   deletion?: MeetingHistoryActions,
+  searchQuery = '',
 ): void {
   if (state.status === 'disposed') return;
-  const items = mergeMeetingHistory(state.records, currentMeeting, onOpenPersisted);
+  const allItems = mergeMeetingHistory(state.records, currentMeeting, onOpenPersisted);
+  const query = normalizeSearch(searchQuery.trim());
+  const matchedRecords = query ? new Set(state.records
+    .filter((record) => record.transcript.utterances.some(
+      ({ rawText, correctedText }) => normalizeSearch(rawText).includes(query)
+        || (correctedText !== null && normalizeSearch(correctedText).includes(query)),
+    )).map(({ meetingId }) => meetingId)) : null;
+  const currentTextMatch = query && currentMeeting?.searchableText?.some(
+    (text) => normalizeSearch(text).includes(query),
+  );
+  const items = !query ? allItems : allItems.filter((item) => normalizeSearch(item.title).includes(query)
+    || matchedRecords?.has(item.meetingId)
+    || (currentTextMatch && currentMeeting?.meetingId === item.meetingId));
   elements.list.replaceChildren(...items.map((item) => renderHistoryItem(item, formatDate, deletion)));
   elements.list.hidden = items.length === 0;
   elements.empty.hidden = true;
+  if (elements.searchEmpty) elements.searchEmpty.hidden = true;
   elements.status.hidden = true;
   elements.retryButton.hidden = true;
   elements.retryButton.disabled = state.status === 'loading';
@@ -73,9 +89,16 @@ export function renderMeetingHistoryList(
       return;
     case 'empty':
     case 'ready':
-      if (items.length === 0) elements.empty.hidden = false;
+      if (items.length === 0) {
+        if (query && allItems.length > 0 && elements.searchEmpty) elements.searchEmpty.hidden = false;
+        else elements.empty.hidden = false;
+      }
       return;
   }
+}
+
+function normalizeSearch(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase('ja');
 }
 
 export function mergeMeetingHistory(
