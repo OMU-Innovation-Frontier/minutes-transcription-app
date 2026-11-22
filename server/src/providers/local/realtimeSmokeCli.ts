@@ -43,6 +43,8 @@ async function main(): Promise<void> {
     maxQueueSize: 10,
     maxSessions: 1,
     processTimeoutMs: 120_000,
+    executablePath: config.localSttExecutable,
+    executableSha256: config.localSttExecutableSha256,
     debugAudioStore,
   });
   const provider = new LocalWhisperServerProvider(runtime, {

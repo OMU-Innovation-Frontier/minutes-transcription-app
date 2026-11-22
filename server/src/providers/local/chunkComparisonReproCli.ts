@@ -6,11 +6,11 @@ import {
   type ChunkComparisonRunRecord,
 } from './chunkComparison.js';
 import { LocalProcessManager, validateExistingFile } from './localProcessManager.js';
+import { resolveConfiguredLocalWhisperArtifact, validateLocalWhisperArtifact } from './localWhisperArtifact.js';
 import { LocalSttError } from './localSttTypes.js';
 
 const AUDIO_SHA256 = '1e9be7f2d175934a8e72956da797f693efa22c645b1dd64f09ccee7209cb9575';
 const MODEL_SHA256 = 'ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb';
-const EXECUTABLE_SHA256 = '58245314fb73b30fbd0cf0542c5c172e23f02b6eb7cad7b51e792439cf5e1755';
 const CONDITION = {
   label: 'chunk-20s-no-overlap',
   evaluationMode: 'chunk-no-overlap' as const,
@@ -51,13 +51,13 @@ async function main(): Promise<void> {
   const targetPhrases = metadata.targetPhrases as [string, string];
   const audioPath = resolve(inputRoot, 'natural-ja.wav');
   const modelPath = resolve(modelRoot, 'ggml-small-q5_1.bin');
-  const executablePath = resolve(binaryRoot, 'v1.9.1/Release/whisper-cli.exe');
+  const artifact = resolveConfiguredLocalWhisperArtifact(binaryRoot);
+  const executablePath = await validateLocalWhisperArtifact(artifact, binaryRoot);
   const [audioSha256, modelSha256, executableSha256] = await Promise.all([
     sha256File(audioPath), sha256File(modelPath), sha256File(executablePath),
   ]);
   verifyHash(audioSha256, AUDIO_SHA256, 'local_audio_hash_mismatch');
   verifyHash(modelSha256, MODEL_SHA256, 'local_model_hash_mismatch');
-  verifyHash(executableSha256, EXECUTABLE_SHA256, 'local_executable_hash_mismatch');
   const processManager = new LocalProcessManager(1);
   const records = [baseline];
   try {

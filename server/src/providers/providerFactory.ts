@@ -15,6 +15,7 @@ import {
   type FunAsrWebSocketFactory,
 } from './funAsr/funAsrWebSocketTransport.js';
 import { LocalWhisperRuntime } from './local/localWhisperRuntime.js';
+import { createLocalWhisperEngine } from './local/localWhisperEngineFactory.js';
 import { LocalWhisperServerProvider } from './local/localWhisperServerProvider.js';
 import { LocalRealtimeMetricsRecorder } from './local/localRealtimeMetrics.js';
 import { RealtimeDebugAudioStore } from './local/realtimeDebugAudio.js';
@@ -43,9 +44,12 @@ export function createServerSpeechToTextProviderRuntime(
   dependencies: ServerProviderRuntimeDependencies = {},
 ): ServerProviderRuntime {
   const localRoot = resolve(process.cwd(), 'server/data/local-stt');
+  if (config.localSttEngine === 'mlx-whisper' && config.localSttDebugAudio) {
+    console.warn('[local-whisper] LOCAL_STT_DEBUG_AUDIO is available only with whisper-cpp; MLX debug audio capture is disabled.');
+  }
   const metricsRecorder = new LocalRealtimeMetricsRecorder(config.localSttDebugMetrics, localRoot);
   const debugAudioStore = new RealtimeDebugAudioStore({
-    enabled: config.localSttDebugAudio,
+    enabled: config.localSttDebugAudio && config.localSttEngine === 'whisper-cpp',
     localRoot,
     directory: resolve(process.cwd(), config.localSttDebugAudioDirectory),
     maxFiles: config.localSttDebugAudioMaxFiles,
@@ -61,6 +65,7 @@ export function createServerSpeechToTextProviderRuntime(
     maxSessions: config.localSttMaxSessions,
     processTimeoutMs: config.localSttProcessTimeoutMs,
     debugAudioStore,
+    engine: createLocalWhisperEngine(config, localRoot),
   });
   const funAsrUsageGuard = createFunAsrUsageGuard(config, dependencies.now);
   const funAsrTransportFactory = dependencies.createFunAsrTransport

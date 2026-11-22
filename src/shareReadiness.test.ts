@@ -51,6 +51,7 @@ describe('team sharing safeguards', () => {
   it('provides every required team document and README link target', () => {
     const documents = [
       'docs/SETUP_WINDOWS.md',
+      'docs/SETUP_MACOS.md',
       'docs/DEVELOPMENT.md',
       'docs/ARCHITECTURE.md',
       'docs/PRIVACY.md',
@@ -69,7 +70,12 @@ describe('team sharing safeguards', () => {
   });
 
   it('keeps the verification scripts read-only', () => {
-    const scripts = ['scripts/verify-dev-environment.ps1', 'scripts/check-share-readiness.ps1'];
+    const scripts = [
+      'scripts/verify-dev-environment.ps1',
+      'scripts/check-share-readiness.ps1',
+      'scripts/verify-dev-environment.mjs',
+      'scripts/check-share-readiness.mjs',
+    ];
     const mutatingCmdlets = /\b(Remove-Item|Move-Item|Copy-Item|New-Item|Set-Content|Add-Content|Out-File|Start-Process|Stop-Process)\b/i;
     for (const script of scripts) {
       expect(existsSync(resolve(root, script))).toBe(true);

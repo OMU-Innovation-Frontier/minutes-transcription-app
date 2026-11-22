@@ -1,5 +1,5 @@
 import { appendFile, mkdir, stat, statfs, writeFile } from 'node:fs/promises';
-import { availableParallelism, cpus, freemem, release } from 'node:os';
+import { availableParallelism, cpus, freemem, platform, release } from 'node:os';
 import { resolve } from 'node:path';
 import { inspectPcm16Mono16kWavQuality } from './audioConverter.js';
 import {
@@ -10,11 +10,11 @@ import {
   type RecoveryStatus,
 } from './chunkComparison.js';
 import { LocalProcessManager } from './localProcessManager.js';
+import { resolveConfiguredLocalWhisperArtifact, validateLocalWhisperArtifact } from './localWhisperArtifact.js';
 import { LocalSttError } from './localSttTypes.js';
 
 const AUDIO_SHA256 = '1e9be7f2d175934a8e72956da797f693efa22c645b1dd64f09ccee7209cb9575';
 const MODEL_SHA256 = 'ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb';
-const EXECUTABLE_SHA256 = '58245314fb73b30fbd0cf0542c5c172e23f02b6eb7cad7b51e792439cf5e1755';
 
 export const SPOKEN_REFERENCE = [
   'えっと、今日は議事録アプリの開発状況について話します。',
@@ -56,16 +56,16 @@ async function main(): Promise<void> {
   const resultRoot = resolve(root, 'results');
   const audioPath = resolve(inputRoot, 'natural-ja.wav');
   const modelPath = resolve(modelRoot, 'ggml-small-q5_1.bin');
-  const executablePath = resolve(binaryRoot, 'v1.9.1/Release/whisper-cli.exe');
+  const artifact = resolveConfiguredLocalWhisperArtifact(binaryRoot);
+  const executablePath = await validateLocalWhisperArtifact(artifact, binaryRoot);
   const [audioSha256, modelSha256, executableSha256] = await Promise.all([
     sha256File(audioPath), sha256File(modelPath), sha256File(executablePath),
   ]);
   verifyHash(audioSha256, AUDIO_SHA256, 'local_audio_hash_mismatch');
   verifyHash(modelSha256, MODEL_SHA256, 'local_model_hash_mismatch');
-  verifyHash(executableSha256, EXECUTABLE_SHA256, 'local_executable_hash_mismatch');
   const wav = await inspectPcm16Mono16kWavQuality(audioPath, [inputRoot]);
   const [modelStat, executableStat, drive] = await Promise.all([
-    stat(modelPath), stat(executablePath), statfs(resolve('C:/')),
+    stat(modelPath), stat(executablePath), statfs(root),
   ]);
   await mkdir(resultRoot, { recursive: true });
   await mkdir(temporaryRoot, { recursive: true });
@@ -128,11 +128,12 @@ async function main(): Promise<void> {
     gpuEnabled: false,
     openVinoEnabled: false,
     whisperCppVersion: 'v1.9.1',
-    windowsVersion: release(),
+    osPlatform: platform(),
+    osVersion: release(),
     cpu: cpus()[0]?.model ?? 'unknown',
     logicalProcessorCount: availableParallelism(),
     availableMemoryBytesBefore: freemem(),
-    cDriveFreeBytesBefore: drive.bavail * drive.bsize,
+    storageFreeBytesBefore: drive.bavail * drive.bsize,
     threadCount: 4,
     input: { path: audioPath, sha256: audioSha256, wav },
     modelFile: { path: modelPath, sizeBytes: modelStat.size, sha256: modelSha256 },

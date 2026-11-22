@@ -88,6 +88,16 @@ const elements = {
   workspace: requiredElement<HTMLElement>('workspace'),
   historyToggle: requiredElement<HTMLButtonElement>('history-toggle'),
   newMeetingButton: requiredElement<HTMLButtonElement>('new-meeting-button'),
+  workspaceStartButton: requiredElement<HTMLButtonElement>('workspace-start-button'),
+  sidebar: requiredElement<HTMLElement>('workspace-sidebar'),
+  sidebarCollapseButton: requiredElement<HTMLButtonElement>('sidebar-collapse-button'),
+  sidebarOpenButton: requiredElement<HTMLButtonElement>('sidebar-open-button'),
+  homeTitle: requiredElement<HTMLElement>('home-title'),
+  homeDescription: requiredElement<HTMLElement>('home-description'),
+  meetingSearchInput: requiredElement<HTMLInputElement>('meeting-search-input'),
+  historySearchEmpty: requiredElement<HTMLElement>('history-search-empty'),
+  summaryToggleButton: requiredElement<HTMLButtonElement>('summary-toggle-button'),
+  summarySheetContent: requiredElement<HTMLElement>('summary-sheet-content'),
   setupForm: requiredElement<HTMLFormElement>('meeting-setup-form'),
   setupError: requiredElement<HTMLElement>('setup-error'),
   setupLanguage: requiredElement<HTMLSelectElement>('setup-language'),
@@ -150,7 +160,6 @@ const elements = {
   cancelDeleteMeetingHistoryButton: requiredElement<HTMLButtonElement>('cancel-delete-meeting-history-button'),
   confirmDeleteMeetingHistoryButton: requiredElement<HTMLButtonElement>('confirm-delete-meeting-history-button'),
   startButton: requiredElement<HTMLButtonElement>('start-button'),
-  stopButton: requiredElement<HTMLButtonElement>('stop-button'),
   reconnectButton: requiredElement<HTMLButtonElement>('reconnect-button'),
   recordingStatus: requiredElement<HTMLElement>('recording-status'),
   recordingStatusLabel: requiredElement<HTMLElement>('recording-status-label'),
@@ -303,7 +312,26 @@ const capture = new AudioCapture(transcriptionSink, {
   onSinkError: (error) => renderBufferWarning(getErrorMessage(error)),
 });
 
-elements.newMeetingButton.addEventListener('click', beginMeeting);
+elements.newMeetingButton.addEventListener('click', () => {
+  clearPersistedMeetingDetail();
+  setAppState({ ...appState, view: 'home' });
+  elements.workspaceStartButton.focus();
+});
+elements.workspaceStartButton.addEventListener('click', () => {
+  if (!appState.meetingStarted || appState.meetingEnded) {
+    beginMeeting();
+    return;
+  }
+  clearPersistedMeetingDetail();
+  setAppState(transitionAppView(appState, 'resume-meeting'));
+  elements.meetingTitle.focus();
+});
+elements.sidebarCollapseButton.addEventListener('click', () => setSidebarCollapsed(true));
+elements.sidebarOpenButton.addEventListener('click', () => setSidebarCollapsed(false));
+elements.meetingSearchInput.addEventListener('input', renderHomeState);
+elements.summaryToggleButton.addEventListener('click', () => {
+  setSummaryExpanded(elements.summarySheetContent.hidden);
+});
 elements.setupForm.addEventListener('submit', (event) => {
   event.preventDefault();
   if (startAfterSettings) beginMeeting();
@@ -339,8 +367,10 @@ elements.confirmDeleteMeetingHistoryButton.addEventListener('click', () => {
 elements.retryDeleteMeetingHistoryButton.addEventListener('click', retryDeleteMeetingHistory);
 elements.homeSettingsButton.addEventListener('click', () => openSettings());
 elements.settingsCloseButton.addEventListener('click', closeSettings);
-elements.startButton.addEventListener('click', () => void startSession());
-elements.stopButton.addEventListener('click', () => void pauseSession());
+elements.startButton.addEventListener('click', () => {
+  if (captureState === 'recording') void pauseSession();
+  else if (captureState === 'idle') void startSession();
+});
 elements.reconnectButton.addEventListener('click', () => provider.reconnect?.());
 elements.endMeetingButton.addEventListener('click', openEndMeetingDialog);
 elements.cancelEndMeetingButton.addEventListener('click', closeEndMeetingDialog);
@@ -390,6 +420,7 @@ function beginMeeting(): void {
   setHistoryExpanded(false);
   clearPersistedMeetingDetail();
   resetMeetingData();
+  setSummaryExpanded(false);
   meetingSettingsSnapshot = settings;
   meetingSummaryExternalAllowed = Boolean(setupSummaryStatus?.enabled && setupSummaryStatus.apiUsed && meetingSetupDraft.externalProcessingAcknowledged);
   currentMeetingId = createSessionId();
@@ -526,7 +557,7 @@ async function startSession(): Promise<void> {
         },
         onProviderStatus: (status) => {
           elements.localWhisperQueue.textContent = String(status.queueLength);
-          elements.localWhisperModel.textContent = status.model ?? 'whisper-small-q5_1';
+          elements.localWhisperModel.textContent = status.model ?? '—';
           elements.localWhisperLanguage.textContent = status.language === 'ja' ? '日本語' : 'English';
           if (status.audioDurationMs !== undefined) elements.localWhisperAudioDuration.textContent = `${(status.audioDurationMs / 1_000).toFixed(2)}秒`;
           if (status.processingTimeMs !== undefined) elements.localWhisperProcessingTime.textContent = `${(status.processingTimeMs / 1_000).toFixed(2)}秒`;
@@ -782,11 +813,16 @@ function renderControls(): void {
   elements.accessLogoutButton.disabled = appState.meetingStarted && !appState.meetingEnded;
   renderManualSummaryControls();
   const active = captureState !== 'idle';
-  elements.startButton.disabled = active || sessionTransition || appState.meetingEnded;
-  elements.startButton.textContent = meetingHasRecorded ? '録音を再開' : '録音を開始';
-  elements.stopButton.disabled = !active || sessionTransition;
+  elements.startButton.disabled = sessionTransition || appState.meetingEnded
+    || (captureState !== 'idle' && captureState !== 'recording');
+  const recording = captureState === 'recording';
+  elements.startButton.dataset.mode = recording ? 'stop' : 'start';
+  const label = recording ? '録音を一時停止' : meetingHasRecorded ? '録音を再開' : '録音を開始';
+  elements.startButton.setAttribute('aria-label', label);
+  elements.startButton.title = label;
   elements.endMeetingButton.disabled = sessionTransition || appState.meetingEnded;
   elements.newMeetingButton.disabled = sessionTransition || finalSummaryController.retryInProgress;
+  elements.workspaceStartButton.disabled = elements.newMeetingButton.disabled;
   elements.reconnectButton.disabled = !active || !provider.reconnect
     || !(transcriptionState === 'reconnecting' || transcriptionState === 'degraded' || transcriptionState === 'error');
   elements.finalizeSentenceButton.disabled = !active;
@@ -1018,12 +1054,18 @@ function renderHomeState(): void {
   elements.resumeMeetingButton.setAttribute('aria-pressed', String(appState.view === 'meeting'));
   elements.homeActiveMeeting.hidden = !active;
   elements.newMeetingButton.hidden = active;
+  elements.homeTitle.textContent = active ? '会議を続ける' : '新しい議事録';
+  elements.homeDescription.textContent = active ? '進行中の文字起こしに戻ります。' : '準備ができたら録音を始めます。';
+  const startLabel = active ? '進行中の会議へ戻る' : '新しい議事録を開始';
+  elements.workspaceStartButton.setAttribute('aria-label', startLabel);
+  elements.workspaceStartButton.title = startLabel;
   renderMeetingHistoryList({
     list: elements.meetingHistoryList,
     empty: elements.homeHistoryEmpty,
     status: elements.homeHistoryStatus,
     statusMessage: elements.homeHistoryStatusMessage,
     retryButton: elements.homeHistoryRetryButton,
+    searchEmpty: elements.historySearchEmpty,
   }, meetingHistoryListController.state, currentPageMeetingHistory(), (value) => formatMeetingDate(Date.parse(value)), openPersistedMeetingDetail, {
     onDelete: openHomeDeleteMeetingHistoryDialog,
     onRename: openRenameMeetingHistory,
@@ -1032,7 +1074,7 @@ function renderHomeState(): void {
     disabled: (meetingId) => meetingHistoryDeleteController.state.status === 'deleting'
       || historyExportInProgress
       || (meetingId === currentMeetingId && (sessionTransition || finalSummaryController.retryInProgress)),
-  });
+  }, elements.meetingSearchInput.value);
 }
 
 async function exportMeetingFromHome(meetingId: string, mode: 'pdf' | 'share'): Promise<void> {
@@ -1164,6 +1206,7 @@ function currentPageMeetingHistory(): CurrentPageMeetingHistoryItem | null {
     title: meetingTitle,
     occurredAt: snapshot.endedAt,
     utteranceCount: snapshot.sentences.length,
+    searchableText: snapshot.sentences.map(({ rawText }) => rawText),
     hasFinalSummary: finalSummaryController.state.status === 'succeeded',
     openDetail: openCurrentMeetingDetail,
   };
@@ -1328,6 +1371,10 @@ function handleGlobalKeydown(event: KeyboardEvent): void {
   if (renameMeetingId) closeRenameMeetingHistory();
   else if (!elements.endMeetingDialog.hidden) closeEndMeetingDialog();
   else if (!elements.settingsPanel.hidden) closeSettings();
+  else if (!elements.summarySheetContent.hidden && elements.summarySheetContent.contains(document.activeElement)) {
+    setSummaryExpanded(false);
+    elements.summaryToggleButton.focus();
+  }
 }
 
 function isCurrentMeetingPersisted(): boolean {
@@ -1335,6 +1382,21 @@ function isCurrentMeetingPersisted(): boolean {
   return Boolean(currentMeetingId && meetingHistoryListController.state.records.some(
     ({ meetingId }) => meetingId === currentMeetingId,
   ));
+}
+
+function setSidebarCollapsed(collapsed: boolean): void {
+  elements.workspace.dataset.sidebarCollapsed = String(collapsed);
+  elements.sidebar.hidden = collapsed;
+  elements.sidebarOpenButton.hidden = !collapsed;
+  setHistoryExpanded(false);
+  if (collapsed) elements.sidebarOpenButton.focus();
+  else elements.sidebarCollapseButton.focus();
+}
+
+function setSummaryExpanded(expanded: boolean): void {
+  elements.summaryToggleButton.setAttribute('aria-expanded', String(expanded));
+  elements.summaryToggleButton.textContent = expanded ? '要約を閉じる' : '要約を表示';
+  elements.summarySheetContent.hidden = !expanded;
 }
 
 function setHistoryExpanded(expanded: boolean): void {

@@ -58,7 +58,7 @@ it('summarizes on button press while recording and keeps previous interim summar
   button('settings-close-button').click();
   let options!: StartTranscriptionOptions;
   startProvider.mockImplementationOnce(async (value) => { options = value; });
-  button('new-meeting-button').click();
+  button('workspace-start-button').click();
   await vi.waitFor(() => expect(options).toBeDefined());
   const emit = (sequence: number) => options.callbacks?.onTranscript?.({
     sessionId: options.sessionId, segmentId: `manual-${sequence}`, sequence,
@@ -69,11 +69,14 @@ it('summarizes on button press while recording and keeps previous interim summar
   button('finalize-sentence-button').click();
   await vi.waitFor(() => expect(button('summarize-now-button').disabled).toBe(false));
   expect(version).toBe(0);
+  expect(document.getElementById('summary-sheet-content')?.hidden).toBe(true);
+  button('summary-toggle-button').click();
+  expect(document.getElementById('summary-sheet-content')?.hidden).toBe(false);
   button('summarize-now-button').click();
   button('summarize-now-button').click();
   await vi.waitFor(() => expect(document.getElementById('interim-summary-history')?.childElementCount).toBe(1));
   expect(version).toBe(1);
-  expect(button('stop-button').disabled).toBe(false);
+  expect(button('start-button').dataset.mode).toBe('stop');
   expect(button('summarize-now-button').disabled).toBe(true);
   emit(2);
   button('finalize-sentence-button').click();

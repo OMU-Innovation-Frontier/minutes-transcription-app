@@ -4,12 +4,15 @@ import { resolve } from 'node:path';
 import { LocalAudioConverter } from './audioConverter.js';
 import { runLocalBenchmarkSuite, type LocalBenchmarkCase } from './benchmarkSuite.js';
 import { getLocalModelDefinition } from './localModelRegistry.js';
+import {
+  resolveConfiguredLocalWhisperArtifact,
+  validateLocalWhisperArtifact,
+} from './localWhisperArtifact.js';
 import { LocalProcessManager } from './localProcessManager.js';
 import { LocalSttError } from './localSttTypes.js';
 import { WhisperCppProvider } from './whisperCppProvider.js';
 
 const MODEL_SHA256 = 'ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb';
-const EXECUTABLE_SHA256 = '58245314fb73b30fbd0cf0542c5c172e23f02b6eb7cad7b51e792439cf5e1755';
 
 const CASES: readonly Omit<LocalBenchmarkCase, 'audioPath'>[] = [
   {
@@ -54,14 +57,14 @@ async function main(): Promise<void> {
   const modelRoot = resolve(root, 'models');
   const inputRoot = resolve(root, 'input');
   const resultRoot = resolve(root, 'results');
-  const executablePath = resolve(binaryRoot, 'v1.9.1/Release/whisper-cli.exe');
+  const artifact = resolveConfiguredLocalWhisperArtifact(binaryRoot);
+  const executablePath = await validateLocalWhisperArtifact(artifact, binaryRoot);
   const model = getLocalModelDefinition('whisper-small-q5_1');
   if (!model || model.provider !== 'local-whisper') {
     throw new LocalSttError('local_model_unknown', 'Whisper small Q5_1 is not registered.');
   }
   const modelPath = resolve(modelRoot, model.fileName);
   await verifySha256(modelPath, MODEL_SHA256, 'local_model_hash_mismatch');
-  await verifySha256(executablePath, EXECUTABLE_SHA256, 'local_executable_hash_mismatch');
   const timestamp = new Date().toISOString().replace(/[:.]/gu, '-');
   const resultBase = resolve(resultRoot, `whisper-small-q5_1-natural-speech-cpu-${timestamp}`);
   const processes = new LocalProcessManager(1);

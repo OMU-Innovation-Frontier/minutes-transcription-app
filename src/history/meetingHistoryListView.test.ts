@@ -100,6 +100,27 @@ describe('meeting history list view', () => {
     expect(elements.list.textContent).not.toContain('schemaVersion');
   });
 
+  it('filters device-local titles and transcript text without exposing the matched text', () => {
+    const searchEmpty = document.createElement('p');
+    elements.searchEmpty = searchEmpty;
+    const state = ready([
+      recordFixture('meeting-1', { title: 'ＯＩＦ会議' }),
+      recordFixture('meeting-2', { title: '別の会議', utteranceCount: 1 }),
+    ]);
+    renderMeetingHistoryList(elements, state, null, undefined, undefined, undefined, 'oif');
+    expect(elements.list.textContent).toContain('ＯＩＦ会議');
+    expect(elements.list.children).toHaveLength(1);
+    renderMeetingHistoryList(elements, state, null, undefined, undefined, undefined, '保存対象の本文');
+    expect(elements.list.textContent).toContain('別の会議');
+    expect(elements.list.textContent).not.toContain('保存対象の本文');
+    renderMeetingHistoryList(elements, state, null, undefined, undefined, undefined, '一致しない検索語');
+    expect(searchEmpty.hidden).toBe(false);
+    expect(elements.empty.hidden).toBe(true);
+    renderMeetingHistoryList(elements, state, null);
+    expect(searchEmpty.hidden).toBe(true);
+    expect(elements.list.children).toHaveLength(2);
+  });
+
   it('uses the snapshot title when the record display title is null', () => {
     renderMeetingHistoryList(elements, ready([recordFixture('meeting-1', { title: null })]), null);
     expect(elements.list.textContent).toContain('作成時のタイトル');

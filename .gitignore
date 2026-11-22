@@ -20,6 +20,7 @@ server/data/local-stt/
 *.webm
 *.flac
 whisper-cli.exe
+whisper-cli
 ggml-*.bin
 *.metadata.json
 *.comparison-*.json

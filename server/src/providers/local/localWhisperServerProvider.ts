@@ -2,7 +2,7 @@ import type { AudioFrameMetadata, LocalWhisperErrorCode, WireLanguage } from '..
 import type { ServerRecognitionStatus, SttProvider, SttTranscriptResult } from '../types.js';
 import { ServerProviderError } from '../types.js';
 import { LocalSttError } from './localSttTypes.js';
-import { LOCAL_WHISPER_MODEL_ID, LocalWhisperRuntime, type LocalWhisperJob, type LocalWhisperRecognitionResult } from './localWhisperRuntime.js';
+import { LocalWhisperRuntime, type LocalWhisperJob, type LocalWhisperRecognitionResult } from './localWhisperRuntime.js';
 import { DEFAULT_VAD_CONFIGURATION, PcmUtteranceSegmenter, type PcmUtterance, type VadConfiguration } from './pcmUtteranceSegmenter.js';
 
 export const LOCAL_PCM_MIME_TYPE = 'audio/pcm;rate=16000;channels=1;format=s16le';
@@ -26,8 +26,9 @@ export interface LocalUtteranceMetrics {
   processExitCode?: number;
   errorCode?: string;
   model: string;
+  engine: string;
   language: WireLanguage;
-  threadCount: 4;
+  threadCount: number | null;
   createdAt: string;
   completedAt?: string;
 }
@@ -165,7 +166,8 @@ export class LocalWhisperServerProvider implements SttProvider {
     const metric: LocalUtteranceMetrics = {
       sessionId: this.sessionId, utteranceId, sequenceStart: utterance.sequenceStart,
       sequenceEnd: utterance.sequenceEnd, audioDurationMs: utterance.audioDurationMs,
-      model: LOCAL_WHISPER_MODEL_ID, language: this.language, threadCount: 4,
+      model: this.runtime.modelId, engine: this.runtime.engineId,
+      language: this.language, threadCount: this.runtime.threadCount,
       createdAt: new Date(createdAt).toISOString(),
     };
     this.metrics.push(metric);
@@ -218,7 +220,7 @@ export class LocalWhisperServerProvider implements SttProvider {
         startTime,
         endTime,
         provider: this.id,
-        model: LOCAL_WHISPER_MODEL_ID,
+        model: this.runtime.modelId,
         processingTimeMs: result.processingTimeMs,
         audioDurationMs: result.audioDurationMs,
         realTimeFactor: result.realTimeFactor,
@@ -246,7 +248,7 @@ export class LocalWhisperServerProvider implements SttProvider {
       sessionId: this.sessionId,
       state,
       queueLength: values.queueLength ?? this.runtime.queueLength,
-      model: LOCAL_WHISPER_MODEL_ID,
+      model: this.runtime.modelId,
       language: this.language,
       utteranceId,
       audioDurationMs: values.audioDurationMs,
@@ -278,8 +280,13 @@ function providerError(code: LocalWhisperErrorCode): ServerProviderError {
     local_stt_disabled: 'Local Whisperはサーバー設定で無効です。',
     local_model_missing: 'Local Whisperモデルが見つかりません。',
     local_model_hash_mismatch: 'Local Whisperモデルの整合性を確認できません。',
+    local_model_hash_missing: 'Local Whisperモデルの検証用SHA-256が設定されていません。',
+    local_engine_unsupported: '選択されたLocal WhisperエンジンはこのOSでは利用できません。',
     local_executable_missing: 'whisper.cpp実行ファイルが見つかりません。',
+    local_executable_hash_missing: 'Local Whisper実行環境の検証用SHA-256が設定されていません。',
+    local_executable_hash_invalid: 'Local Whisper実行環境のSHA-256設定が不正です。',
     local_executable_hash_mismatch: 'whisper.cpp実行ファイルの整合性を確認できません。',
+    local_worker_missing: 'MLX Whisperワーカーが見つかりません。',
     local_audio_format_unsupported: 'Local Whisperには16 kHz mono PCM16音声が必要です。',
     local_pcm_invalid: '受信したPCM音声が不正です。',
     local_process_timeout: 'Local Whisperの認識がタイムアウトしました。',
@@ -299,7 +306,9 @@ function providerError(code: LocalWhisperErrorCode): ServerProviderError {
 function isLocalWhisperErrorCode(code: string): code is LocalWhisperErrorCode {
   return [
     'local_stt_disabled', 'local_model_missing', 'local_model_hash_mismatch',
-    'local_model_unsupported', 'local_executable_missing', 'local_executable_hash_mismatch',
+    'local_model_hash_missing', 'local_model_unsupported', 'local_engine_unsupported',
+    'local_executable_missing', 'local_executable_hash_missing', 'local_executable_hash_invalid',
+    'local_executable_hash_mismatch', 'local_worker_missing',
     'local_audio_format_unsupported', 'local_pcm_invalid', 'local_language_unsupported',
     'local_threads_invalid', 'local_vad_configuration_invalid', 'local_queue_limit',
     'local_session_limit', 'local_session_inactive', 'local_runtime_closed',

@@ -2,16 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { WireLanguage } from '../../../../shared/protocol.js';
-import { parseWhisperTimestampOutput, sha256File, assertSafeChildPath, type TimestampedSegment } from './chunkComparison.js';
-import { LocalProcessManager, validateExistingFile } from './localProcessManager.js';
+import { assertSafeChildPath, type TimestampedSegment } from './chunkComparison.js';
+import type { LocalWhisperEngine } from './localWhisperEngine.js';
 import { LocalSttError } from './localSttTypes.js';
 import type { PcmUtterance } from './pcmUtteranceSegmenter.js';
 import type { VadConfiguration } from './pcmUtteranceSegmenter.js';
 import type { RealtimeDebugAudioStore, RealtimeDebugCapture } from './realtimeDebugAudio.js';
 
-export const SMALL_Q5_1_SHA256 = 'ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb';
-export const WHISPER_CLI_SHA256 = '58245314fb73b30fbd0cf0542c5c172e23f02b6eb7cad7b51e792439cf5e1755';
-export const LOCAL_WHISPER_MODEL_ID = 'whisper-small-q5_1';
+import { WhisperCppEngine, WHISPER_CPP_MODEL_ID } from './whisperCppEngine.js';
+
+export { buildLocalWhisperArguments, runTimestampedWhisperFile, SMALL_Q5_1_SHA256, WHISPER_CLI_SHA256 } from './whisperCppEngine.js';
+export const LOCAL_WHISPER_MODEL_ID = WHISPER_CPP_MODEL_ID;
 
 export interface LocalWhisperRuntimeOptions {
   enabled: boolean;
@@ -21,7 +22,10 @@ export interface LocalWhisperRuntimeOptions {
   maxQueueSize: number;
   maxSessions: number;
   processTimeoutMs: number;
+  executablePath?: string;
+  executableSha256?: string;
   debugAudioStore?: RealtimeDebugAudioStore;
+  engine?: LocalWhisperEngine;
 }
 
 export interface LocalWhisperJob {
@@ -44,7 +48,7 @@ export interface LocalWhisperRecognitionResult {
   realTimeFactor: number;
   queueWaitTimeMs: number;
   totalLatencyMs: number;
-  processExitCode: number;
+  processExitCode?: number;
   processCpuAveragePercent?: number;
   processCpuPeakPercent?: number;
   peakWorkingSetBytes?: number;
@@ -52,24 +56,9 @@ export interface LocalWhisperRecognitionResult {
   completedAt: number;
 }
 
-export interface TimestampedWhisperFileResult {
-  transcript: string;
-  segments: TimestampedSegment[];
-  processingTimeMs: number;
-  processExitCode: number;
-  processCpuAveragePercent?: number;
-  processCpuPeakPercent?: number;
-  peakWorkingSetBytes?: number;
-  unparsedOutputLineCount: number;
-}
-
 export class LocalWhisperRuntime {
-  private readonly binaryRoot: string;
-  private readonly modelRoot: string;
   private readonly temporaryRoot: string;
-  private readonly executablePath: string;
-  private readonly modelPath: string;
-  private readonly processes = new LocalProcessManager(1);
+  private readonly engine: LocalWhisperEngine;
   private readonly queue: LocalWhisperJob[] = [];
   private readonly activeSessions = new Set<string>();
   private readonly pendingBySession = new Map<string, number>();
@@ -82,11 +71,20 @@ export class LocalWhisperRuntime {
   private cancelledSessions = new Set<string>();
 
   constructor(private readonly options: LocalWhisperRuntimeOptions) {
-    this.binaryRoot = resolve(options.root, 'bin');
-    this.modelRoot = resolve(options.root, 'models');
     this.temporaryRoot = resolve(options.root, 'temp/realtime');
-    this.executablePath = resolve(this.binaryRoot, 'v1.9.1/Release/whisper-cli.exe');
-    this.modelPath = resolve(this.modelRoot, 'ggml-small-q5_1.bin');
+    this.engine = options.engine ?? new WhisperCppEngine(options);
+  }
+
+  get modelId(): string {
+    return this.engine.descriptor.modelId;
+  }
+
+  get engineId(): string {
+    return this.engine.descriptor.id;
+  }
+
+  get threadCount(): number | null {
+    return this.engine.descriptor.threadCount;
   }
 
   get queueLength(): number {
@@ -100,6 +98,7 @@ export class LocalWhisperRuntime {
       throw new LocalSttError('local_session_limit', 'The Local Whisper session limit has been reached.');
     }
     await this.ensureAvailable();
+    if (this.closed) throw new LocalSttError('local_runtime_closed', 'Local Whisper is shutting down.');
     this.activeSessions.add(sessionId);
     this.cancelledSessions.delete(sessionId);
   }
@@ -145,26 +144,16 @@ export class LocalWhisperRuntime {
     this.closed = true;
     for (const job of this.queue.splice(0)) this.completePending(job.sessionId);
     this.activeSessions.clear();
-    await this.processes.close();
+    await this.engine.close();
   }
 
   private ensureAvailable(): Promise<void> {
-    this.availability ??= this.verifyFiles();
+    this.availability ??= this.initialize();
     return this.availability;
   }
 
-  private async verifyFiles(): Promise<void> {
-    if (this.options.modelId !== 'small-q5_1') {
-      throw new LocalSttError('local_model_unsupported', 'The configured Local Whisper model is not supported.');
-    }
-    if (this.options.threads !== 4) throw new LocalSttError('local_threads_invalid', 'Local Whisper requires four CPU threads.');
-    const [model, executable] = await Promise.all([
-      validateExistingFile(this.modelPath, [this.modelRoot], 'local_model_missing', 'The Local Whisper model is not available.'),
-      validateExistingFile(this.executablePath, [this.binaryRoot], 'local_executable_missing', 'The whisper.cpp executable is not available.'),
-    ]);
-    const [modelHash, executableHash] = await Promise.all([sha256File(model), sha256File(executable)]);
-    if (modelHash !== SMALL_Q5_1_SHA256) throw new LocalSttError('local_model_hash_mismatch', 'The Local Whisper model failed integrity verification.');
-    if (executableHash !== WHISPER_CLI_SHA256) throw new LocalSttError('local_executable_hash_mismatch', 'The whisper.cpp executable failed integrity verification.');
+  private async initialize(): Promise<void> {
+    await this.engine.initialize();
     await mkdir(this.temporaryRoot, { recursive: true });
   }
 
@@ -213,25 +202,21 @@ export class LocalWhisperRuntime {
     let failure: unknown;
     let debugCapture: RealtimeDebugCapture | undefined;
     try {
-      debugCapture = await this.options.debugAudioStore?.capture({
+      const debugArtifacts = this.engine.descriptor.debugArtifacts;
+      debugCapture = debugArtifacts ? await this.options.debugAudioStore?.capture({
         temporaryWavPath: temporaryPath,
         sessionId: job.sessionId,
         utteranceId: job.utteranceId,
         language: job.language,
         utterance: job.utterance,
         vad: job.vadConfiguration,
-        modelSha256: SMALL_Q5_1_SHA256,
-        whisperCliSha256: WHISPER_CLI_SHA256,
-      });
+        modelSha256: debugArtifacts.modelSha256,
+        whisperCliSha256: debugArtifacts.executableSha256,
+      }) : undefined;
       try {
-        const result = await runTimestampedWhisperFile({
-          processes: this.processes,
-          executablePath: this.executablePath,
-          binaryRoot: this.binaryRoot,
-          modelPath: this.modelPath,
+        const result = await this.engine.transcribe({
           audioPath: temporaryPath,
           language: job.language,
-          threads: this.options.threads,
           timeoutMs: this.options.processTimeoutMs,
           signal,
         });
@@ -289,64 +274,6 @@ export class LocalWhisperRuntime {
     for (const waiter of this.waiters.get(sessionId) ?? []) waiter();
     this.waiters.delete(sessionId);
   }
-}
-
-export async function runTimestampedWhisperFile(options: {
-  processes: LocalProcessManager;
-  executablePath: string;
-  binaryRoot: string;
-  modelPath: string;
-  audioPath: string;
-  language: WireLanguage;
-  threads: number;
-  timeoutMs: number;
-  signal?: AbortSignal;
-}): Promise<TimestampedWhisperFileResult> {
-  const result = await options.processes.run({
-    executablePath: options.executablePath,
-    allowedExecutableRoots: [options.binaryRoot],
-    timeoutMs: options.timeoutMs,
-    signal: options.signal,
-    arguments: buildLocalWhisperArguments(
-      options.modelPath,
-      options.audioPath,
-      options.language,
-      options.threads,
-    ),
-  });
-  const segments = parseWhisperTimestampOutput(result.stdout);
-  const outputLines = result.stdout.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
-  if (segments.length === 0 && outputLines.length > 0) {
-    throw new LocalSttError('local_timestamp_parse_failed', 'Local Whisper returned an unrecognized timestamp format.');
-  }
-  return {
-    transcript: segments.map((segment) => segment.text).join(' ').trim(),
-    segments,
-    processingTimeMs: result.totalProcessingMs,
-    processExitCode: result.exitCode,
-    processCpuAveragePercent: result.cpuAveragePercent,
-    processCpuPeakPercent: result.cpuPeakPercent,
-    peakWorkingSetBytes: result.peakMemoryBytes,
-    unparsedOutputLineCount: Math.max(0, outputLines.length - segments.length),
-  };
-}
-
-export function buildLocalWhisperArguments(
-  modelPath: string,
-  audioPath: string,
-  language: WireLanguage,
-  threads: number,
-): string[] {
-  if (language !== 'ja' && language !== 'en') throw new LocalSttError('local_language_unsupported', 'Local Whisper language is invalid.');
-  if (threads !== 4) throw new LocalSttError('local_threads_invalid', 'Local Whisper requires four CPU threads.');
-  return [
-    '--model', modelPath,
-    '--file', audioPath,
-    '--language', language,
-    '--threads', String(threads),
-    '--no-prints',
-    '--no-gpu',
-  ];
 }
 
 function createPcm16Wav(pcm: Buffer): Buffer {

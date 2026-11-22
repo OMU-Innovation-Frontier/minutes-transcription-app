@@ -18,6 +18,8 @@ async function main(): Promise<void> {
     localRoot,
     debugAudioDirectory,
     timeoutMs: config.localSttProcessTimeoutMs,
+    executablePath: config.localSttExecutable,
+    executableSha256: config.localSttExecutableSha256,
     showTranscript,
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

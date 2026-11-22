@@ -19,7 +19,9 @@ describe('application shell markup', () => {
   });
 
   it('offers the primary new meeting action', () => {
-    expect(document.querySelector<HTMLButtonElement>('#new-meeting-button')?.textContent).toContain('新規会議');
+    expect(document.querySelector<HTMLButtonElement>('#new-meeting-button')?.getAttribute('aria-label')).toBe('新しい議事録');
+    expect(document.querySelector('#home-view #workspace-start-button svg')).not.toBeNull();
+    expect(document.querySelector('#meeting-search-input')?.getAttribute('type')).toBe('search');
   });
 
   it('shows a truthful empty state instead of fictional meeting history', () => {
@@ -39,7 +41,7 @@ describe('application shell markup', () => {
   it('places recording controls in the bottom meeting control bar', () => {
     const controls = document.querySelector('.meeting-controls');
     expect(controls?.querySelector('#start-button')).not.toBeNull();
-    expect(controls?.querySelector('#stop-button')).not.toBeNull();
+    expect(controls?.querySelector('#start-button .record-stop-icon')).not.toBeNull();
     expect(controls?.querySelector('#end-meeting-button')).not.toBeNull();
   });
 
@@ -62,8 +64,9 @@ describe('application shell markup', () => {
 
   it('keeps transcript-follow and recording control events wired', () => {
     expect(mainSource).toContain("elements.latestTranscriptButton.addEventListener('click', scrollToLatestTranscript)");
-    expect(mainSource).toContain("elements.startButton.addEventListener('click', () => void startSession())");
-    expect(mainSource).toContain("elements.stopButton.addEventListener('click', () => void pauseSession())");
+    expect(mainSource).toContain("elements.startButton.addEventListener('click', () => {");
+    expect(mainSource).toContain("if (captureState === 'recording') void pauseSession()");
+    expect(mainSource).toContain("else if (captureState === 'idle') void startSession()");
   });
 
   it('keeps final-summary retry inside the readonly detail summary', () => {
