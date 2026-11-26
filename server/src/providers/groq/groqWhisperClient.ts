@@ -1,8 +1,7 @@
-import type { WireLanguage } from '../../../../shared/protocol.js';
+import { DEFAULT_GROQ_WHISPER_MODEL, type GroqWhisperModel, type WireLanguage } from '../../../../shared/protocol.js';
 import { ServerProviderError } from '../types.js';
 
 export const GROQ_TRANSCRIPTION_ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions';
-export const GROQ_WHISPER_MODEL = 'whisper-large-v3-turbo';
 const MAX_RESPONSE_BYTES = 1_000_000;
 const MAX_TRANSCRIPT_CHARS = 100_000;
 
@@ -25,7 +24,7 @@ export class GroqWhisperClient {
     if (!this.options.apiKey?.trim()) throw groqError('groq_api_key_missing', false);
   }
 
-  async transcribe(wav: Uint8Array, language: WireLanguage, signal?: AbortSignal): Promise<string> {
+  async transcribe(wav: Uint8Array, language: WireLanguage, signal?: AbortSignal, model: GroqWhisperModel = DEFAULT_GROQ_WHISPER_MODEL): Promise<string> {
     this.assertConfigured();
     if (language !== 'ja' && language !== 'en') throw groqError('groq_language_unsupported', false);
 
@@ -36,7 +35,7 @@ export class GroqWhisperClient {
     try {
       const body = new FormData();
       body.append('file', new Blob([wav], { type: 'audio/wav' }), 'utterance.wav');
-      body.append('model', GROQ_WHISPER_MODEL);
+      body.append('model', model);
       body.append('language', language);
       body.append('response_format', 'json');
       body.append('temperature', '0');

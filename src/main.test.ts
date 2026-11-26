@@ -3,7 +3,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { StartTranscriptionOptions } from './transcription/types';
 import type { AudioCaptureCallbacks } from './audio/types';
 
-const { startProvider } = vi.hoisted(() => ({ startProvider: vi.fn<(options: StartTranscriptionOptions) => Promise<void>>(async () => undefined) }));
+const { startProvider, createProvider } = vi.hoisted(() => ({
+  startProvider: vi.fn<(options: StartTranscriptionOptions) => Promise<void>>(async () => undefined),
+  createProvider: vi.fn(),
+}));
 
 vi.mock('./audio/audioCapture', () => ({
   AudioCapture: class {
@@ -14,12 +17,14 @@ vi.mock('./audio/audioCapture', () => ({
   },
 }));
 vi.mock('./transcription/providerFactory', () => ({
-  getDefaultProviderKind: () => 'mock',
-  createSpeechToTextProvider: () => ({
-    id: 'mock', label: 'Mock', isMock: true, isSupported: () => true,
-    start: startProvider, stop: async () => undefined, abort: async () => undefined,
-    acceptChunk: () => undefined,
-  }),
+  createSpeechToTextProvider: (kind: string) => {
+    createProvider(kind);
+    return {
+      id: 'mock', label: 'Mock', isMock: true, isSupported: () => true,
+      start: startProvider, stop: async () => undefined, abort: async () => undefined,
+      acceptChunk: () => undefined,
+    };
+  },
 }));
 vi.mock('./localRecording/localEvaluationRecorder', () => ({
   initializeLocalEvaluationRecorder: () => ({ dispose: () => undefined }),
@@ -40,11 +45,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('starts consecutive meetings in one click and saves the edited title', async () => {
+it('starts either way in one click and saves the title with or without a final summary', async () => {
   vi.stubGlobal('indexedDB', {});
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-    enabled: false, provider: 'mock', apiUsed: false, intervalSeconds: 10,
-  }), { status: 200 })));
+  const request = vi.fn(async (url: string, init?: RequestInit) => new Response(JSON.stringify(
+    url.endsWith('/final') && init?.method === 'POST'
+      ? { version: 1, overview: '合成の最終要約', agenda: [], keyPoints: [], decisions: [], unresolvedItems: [], actionItems: [], nextChecks: [] }
+      : { enabled: true, provider: 'groq', apiUsed: true, intervalSeconds: 10 },
+  ), { status: 200 }));
+  vi.stubGlobal('fetch', request);
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
   startProvider.mockClear();
@@ -53,11 +61,15 @@ it('starts consecutive meetings in one click and saves the edited title', async 
   expect(document.activeElement).toBe(button('sidebar-open-button'));
   button('sidebar-open-button').click();
   expect(document.getElementById('workspace-sidebar')?.hidden).toBe(false);
-  button('new-meeting-button').click();
-  expect(document.activeElement).toBe(button('workspace-start-button'));
-  expect(startProvider).not.toHaveBeenCalled();
+  button('home-settings-button').click();
+  const model = document.querySelector<HTMLSelectElement>('#setup-groq-model')!;
+  expect(document.querySelector('#setup-provider')).toBeNull();
+  model.value = 'whisper-large-v3';
+  model.dispatchEvent(new Event('change'));
+  button('settings-close-button').click();
 
-  for (const title of ['First synthetic meeting', 'Second synthetic meeting']) {
+  for (const withSummary of [false, true]) {
+    const title = withSummary ? 'Second synthetic meeting' : 'First synthetic meeting';
     startProvider.mockClear();
     startProvider.mockImplementationOnce(async (options) => {
       options.callbacks?.onTranscript?.({
@@ -66,11 +78,15 @@ it('starts consecutive meetings in one click and saves the edited title', async 
         provider: 'mock', startTime: 0, endTime: 1000, createdAt: new Date().toISOString(),
       });
     });
-    button('workspace-start-button').click();
+    button(withSummary ? 'workspace-start-button' : 'new-meeting-button').click();
     expect(document.documentElement.dataset.appView).toBe('meeting');
+    expect(document.getElementById('settings-panel')?.hidden).toBe(true);
+    expect(button('home-settings-button').hidden).toBe(true);
     expect(document.getElementById('meeting-title')?.textContent).toBe('新規会議');
     await vi.waitFor(() => expect(button('end-meeting-button').disabled).toBe(false));
     expect(startProvider).toHaveBeenCalledTimes(1);
+    expect(createProvider).toHaveBeenLastCalledWith('groq-whisper');
+    expect(startProvider).toHaveBeenCalledWith(expect.objectContaining({ groqModel: 'whisper-large-v3' }));
     expect(button('start-button').dataset.mode).toBe('stop');
     button('start-button').click();
     await vi.waitFor(() => {
@@ -82,10 +98,20 @@ it('starts consecutive meetings in one click and saves the edited title', async 
     button('end-meeting-button').click();
     expect(input('end-meeting-title-input').value).toBe('合成の会議内容です。');
     input('end-meeting-title-input').value = title;
-    button('confirm-end-meeting-button').click();
+    const finalRequests = () => request.mock.calls.filter(([url]) => url.endsWith('/final'));
+    const summaryButton = button('confirm-end-meeting-with-summary-button');
+    await vi.waitFor(() => expect(summaryButton.disabled).toBe(false));
+    expect(document.getElementById('end-meeting-summary-status')?.textContent).toContain('Groqに送信');
+    expect(finalRequests()).toHaveLength(0);
+    (withSummary ? summaryButton : button('confirm-end-meeting-button')).click();
     await vi.waitFor(() => expect(document.documentElement.dataset.appView).toBe('meeting-detail'));
     expect(document.getElementById('detail-title')?.textContent).toBe(title);
     await vi.waitFor(() => expect(button('new-meeting-button').disabled).toBe(false));
+    expect(finalRequests()).toHaveLength(withSummary ? 1 : 0);
+    if (withSummary) {
+      expect(finalRequests()[0]?.[1]?.headers).toMatchObject({ 'x-summary-provider': 'groq' });
+      expect(document.body.textContent).toContain('合成の最終要約');
+    }
     button('detail-home-button').click();
   }
 

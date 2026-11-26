@@ -1,9 +1,11 @@
+import { isGroqWhisperModel, type GroqWhisperModel } from '../../shared/protocol';
 import type { SpeechToTextProviderKind, TranscriptionLanguage } from '../transcription/types';
 
 export interface MeetingSetupDraft {
   title: string;
   language: TranscriptionLanguage;
   transcriptionProvider: SpeechToTextProviderKind;
+  groqModel?: GroqWhisperModel;
   correctionEnabled: boolean;
   liveSummaryEnabled: boolean;
   finalSummaryEnabled: boolean;
@@ -50,6 +52,26 @@ export function createInitialMeetingSetupDraft(provider: SpeechToTextProviderKin
   return { title: '新しい会議', language: 'ja-JP', transcriptionProvider: provider, correctionEnabled: false, liveSummaryEnabled: false, finalSummaryEnabled: false, historyRetention: 'page-session', externalProcessingAcknowledged: false };
 }
 
+const groqModelPreferenceKey = 'minutes.groq-whisper-model';
+
+export function loadGroqWhisperModelPreference(): GroqWhisperModel | undefined {
+  try {
+    const model = window.localStorage.getItem(groqModelPreferenceKey);
+    return isGroqWhisperModel(model) ? model : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveGroqWhisperModelPreference(model?: GroqWhisperModel): void {
+  try {
+    if (model) window.localStorage.setItem(groqModelPreferenceKey, model);
+    else window.localStorage.removeItem(groqModelPreferenceKey);
+  } catch {
+    // The selected model still applies to the next meeting on this page.
+  }
+}
+
 export function validateMeetingSetupDraft(
   draft: MeetingSetupDraft,
   requirements: MeetingExternalProcessingRequirements = LOCAL_CORRECTION_REQUIREMENTS,
@@ -60,6 +82,7 @@ export function validateMeetingSetupDraft(
   if (draft.language !== 'ja-JP' && draft.language !== 'en-US') return '言語を選択してください。';
   const option = meetingTranscriptionCatalog.find((item) => item.id === draft.transcriptionProvider);
   if (!option) return '文字起こし方法を選択してください。';
+  if (draft.groqModel !== undefined && (draft.transcriptionProvider !== 'groq-whisper' || !isGroqWhisperModel(draft.groqModel))) return '文字起こしモデルを確認してください。';
   if (draft.correctionEnabled && !requirements.correctionStatusKnown) return '整文のデータ処理方法を確認できません。';
   if (draft.liveSummaryEnabled || draft.finalSummaryEnabled) {
     if (requirements.summaryStatusKnown === false) return '要約のデータ処理方法を確認できません。';
@@ -76,7 +99,7 @@ export function createMeetingSettingsSnapshot(
 ): MeetingSettingsSnapshot {
   const error = validateMeetingSetupDraft(draft, requirements);
   if (error) throw new Error(error);
-  return Object.freeze({ settingsVersion: 1 as const, title: draft.title.trim(), language: draft.language, transcriptionProvider: draft.transcriptionProvider, correctionEnabled: draft.correctionEnabled, liveSummaryEnabled: draft.liveSummaryEnabled, finalSummaryEnabled: draft.finalSummaryEnabled, historyRetention: 'page-session' as const, createdAt });
+  return Object.freeze({ settingsVersion: 1 as const, title: draft.title.trim(), language: draft.language, transcriptionProvider: draft.transcriptionProvider, ...(draft.groqModel ? { groqModel: draft.groqModel } : {}), correctionEnabled: draft.correctionEnabled, liveSummaryEnabled: draft.liveSummaryEnabled, finalSummaryEnabled: draft.finalSummaryEnabled, historyRetention: 'page-session' as const, createdAt });
 }
 
 export function buildMeetingSetupSummary(
@@ -109,10 +132,11 @@ export function requiresExternalProcessingAcknowledgement(
 export function buildExternalProcessingDisclosure(
   draft: MeetingSetupDraft,
   requirements: MeetingExternalProcessingRequirements = LOCAL_CORRECTION_REQUIREMENTS,
+  includeTranscription = true,
 ): string {
   const messages: string[] = [];
   const option = meetingTranscriptionCatalog.find((item) => item.id === draft.transcriptionProvider);
-  if (option?.externalAcknowledgementRequired) messages.push(option.description);
+  if (includeTranscription && option?.externalAcknowledgementRequired) messages.push(option.description);
   if (draft.correctionEnabled && requirements.correctionExternalTransmission) {
     messages.push('確定した文字起こし、直前の発話、設定した用語集を整文のためGroqへ送信します。');
   }

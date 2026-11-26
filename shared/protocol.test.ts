@@ -70,8 +70,13 @@ describe('WebSocket protocol', () => {
     expect(parseClientControlMessage(JSON.stringify({
       type: 'resume', sessionId: 'groq-session', language: 'ja',
       audioFormat: 'audio/pcm;rate=16000;channels=1;format=s16le', provider: 'groq-whisper',
-      lastAcknowledgedSequence: 3,
-    }))).toMatchObject({ type: 'resume', provider: 'groq-whisper', lastAcknowledgedSequence: 3 });
+      lastAcknowledgedSequence: 3, groqModel: 'whisper-large-v3',
+    }))).toMatchObject({ type: 'resume', provider: 'groq-whisper', lastAcknowledgedSequence: 3, groqModel: 'whisper-large-v3' });
+    for (const [provider, groqModel] of [['groq-whisper', 'other-model'], ['local-whisper', 'whisper-large-v3']]) {
+      expect(() => parseClientControlMessage(JSON.stringify({
+        type: 'start', sessionId: 'groq-session', language: 'ja', audioFormat: 'audio/pcm', provider, groqModel,
+      }))).toThrowError(expect.objectContaining({ code: 'groq_model_unsupported' }));
+    }
     expect(() => parseClientControlMessage(JSON.stringify({
       type: 'start', sessionId: 'groq-session', language: 'ja', audioFormat: 'audio/pcm', provider: 'unknown',
     }))).toThrowError(expect.objectContaining({ code: 'invalid_provider' }));

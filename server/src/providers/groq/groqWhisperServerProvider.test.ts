@@ -116,14 +116,15 @@ describe('GroqWhisperServerProvider', () => {
     const statuses: string[] = [];
     provider.onTranscript(transcripts);
     provider.onStatus((status) => statuses.push(status.state));
-    await provider.startSession({ sessionId: 'session', language: 'ja', mimeType: GROQ_PCM_MIME_TYPE, sampleRate: 16_000 });
+    await provider.startSession({ sessionId: 'session', language: 'ja', mimeType: GROQ_PCM_MIME_TYPE, sampleRate: 16_000, groqModel: 'whisper-large-v3' });
     const audio = voicedPcm(8_000);
     await provider.sendAudio({ sessionId: 'session', sequence: 0, audio,
       metadata: { capturedAt: 0, sampleRate: 16_000, channels: 1, encoding: 'pcm_s16le', frameCount: 8_000 } });
     await provider.stopSession('session');
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect((fetchMock.mock.calls[0]?.[1]?.body as FormData).get('model')).toBe('whisper-large-v3');
     expect(transcripts).toHaveBeenCalledWith(expect.objectContaining({
-      text: '確定結果', isFinal: true, provider: 'groq-whisper', model: 'whisper-large-v3-turbo',
+      text: '確定結果', isFinal: true, provider: 'groq-whisper', model: 'whisper-large-v3',
       audioDurationMs: 500,
     }));
     expect(statuses).toEqual(expect.arrayContaining(['listening', 'queued', 'recognizing', 'completed']));

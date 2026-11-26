@@ -36,9 +36,9 @@ import {
   type EndedMeetingSnapshot,
 } from './history/meetingHistoryPersistence';
 import { IncrementalSummaryCoordinator, SummaryHttpClient, type SummaryStatus } from './summary/summaryClient';
-import { isBrowserSpeechRecognitionSupported } from './transcription/browserProvider';
+import { isGroqWhisperModel } from '../shared/protocol';
 import { connectionPresentation } from './transcription/connectionPresentation';
-import { createSpeechToTextProvider, getDefaultProviderKind } from './transcription/providerFactory';
+import { createSpeechToTextProvider } from './transcription/providerFactory';
 import { TranscriptStore } from './transcription/transcriptStore';
 import type {
   SpeechToTextProvider,
@@ -59,8 +59,8 @@ import {
   buildExternalProcessingDisclosure,
   createInitialMeetingSetupDraft,
   createMeetingSettingsSnapshot,
-  meetingTranscriptionCatalog,
-  requiresExternalProcessingAcknowledgement,
+  loadGroqWhisperModelPreference,
+  saveGroqWhisperModelPreference,
   validateMeetingSetupDraft,
   type MeetingExternalProcessingRequirements,
   type MeetingSettingsSnapshot,
@@ -98,18 +98,15 @@ const elements = {
   historySearchEmpty: requiredElement<HTMLElement>('history-search-empty'),
   summaryToggleButton: requiredElement<HTMLButtonElement>('summary-toggle-button'),
   summarySheetContent: requiredElement<HTMLElement>('summary-sheet-content'),
-  setupForm: requiredElement<HTMLFormElement>('meeting-setup-form'),
+  setupSettings: requiredElement<HTMLElement>('meeting-setup-settings'),
   setupError: requiredElement<HTMLElement>('setup-error'),
   setupLanguage: requiredElement<HTMLSelectElement>('setup-language'),
-  setupProvider: requiredElement<HTMLSelectElement>('setup-provider'),
-  setupProviderDescription: requiredElement<HTMLElement>('setup-provider-description'),
+  setupGroqModel: requiredElement<HTMLSelectElement>('setup-groq-model'),
   setupCorrection: requiredElement<HTMLInputElement>('setup-correction'),
   setupLiveSummary: requiredElement<HTMLInputElement>('setup-live-summary'),
-  setupFinalSummary: requiredElement<HTMLInputElement>('setup-final-summary'),
   setupExternalConfirmation: requiredElement<HTMLElement>('setup-external-confirmation'),
   setupExternalDescription: requiredElement<HTMLElement>('setup-external-description'),
   setupExternalAck: requiredElement<HTMLInputElement>('setup-external-ack'),
-  setupCreateButton: requiredElement<HTMLButtonElement>('setup-create-button'),
   resumeMeetingButton: requiredElement<HTMLButtonElement>('resume-meeting-button'),
   homeActiveMeeting: requiredElement<HTMLElement>('home-active-meeting'),
   homeHistoryEmpty: requiredElement<HTMLElement>('home-history-empty'),
@@ -137,6 +134,8 @@ const elements = {
   endMeetingTitleInput: requiredElement<HTMLInputElement>('end-meeting-title-input'),
   cancelEndMeetingButton: requiredElement<HTMLButtonElement>('cancel-end-meeting-button'),
   confirmEndMeetingButton: requiredElement<HTMLButtonElement>('confirm-end-meeting-button'),
+  confirmEndMeetingWithSummaryButton: requiredElement<HTMLButtonElement>('confirm-end-meeting-with-summary-button'),
+  endMeetingSummaryStatus: requiredElement<HTMLElement>('end-meeting-summary-status'),
   detailTitle: requiredElement<HTMLElement>('detail-title'),
   detailDate: requiredElement<HTMLElement>('detail-date'),
   detailHistoryStatus: requiredElement<HTMLElement>('detail-history-status'),
@@ -215,7 +214,7 @@ const elements = {
   finalSummary: requiredElement<HTMLElement>('final-summary'),
 };
 
-let provider: SpeechToTextProvider = createSpeechToTextProvider(getDefaultProviderKind());
+let provider: SpeechToTextProvider = createSpeechToTextProvider('groq-whisper');
 let captureState: CaptureState = 'idle';
 let transcriptionState: TranscriptionState = 'disconnected';
 let appState: AppViewState = createInitialAppViewState();
@@ -239,11 +238,11 @@ let historyExportInProgress = false;
 let renameMeetingId: string | null = null;
 let renameInProgress = false;
 let meetingSetupDraft = {
-  ...createInitialMeetingSetupDraft(getDefaultProviderKind()),
+  ...createInitialMeetingSetupDraft('groq-whisper'),
   title: '新規会議',
 };
 let meetingTitle = meetingSetupDraft.title;
-let startAfterSettings = false;
+let endSummaryStatus: SummaryStatus | null = null;
 let settingsTrigger: HTMLElement | null = null;
 let summaryStatusRequest: Promise<void> | null = null;
 let reconnectAttempt = 0;
@@ -286,16 +285,10 @@ const meetingHistoryDeleteController = new MeetingHistoryDeleteController(
   handleMeetingHistoryDeleteChange,
 );
 
-const recognitionOption = elements.setupProvider.querySelector<HTMLOptionElement>('option[value="browser"]');
-if (recognitionOption && !isBrowserSpeechRecognitionSupported()) {
-  recognitionOption.disabled = true;
-  recognitionOption.textContent = 'ブラウザー音声認識（この環境では利用不可）';
-}
-elements.setupProvider.value = meetingSetupDraft.transcriptionProvider;
+elements.setupGroqModel.value = loadGroqWhisperModelPreference() ?? '';
 elements.setupLanguage.value = meetingSetupDraft.language;
 elements.setupCorrection.checked = meetingSetupDraft.correctionEnabled;
 elements.setupLiveSummary.checked = meetingSetupDraft.liveSummaryEnabled;
-elements.setupFinalSummary.checked = meetingSetupDraft.finalSummaryEnabled;
 
 const transcriptionSink: AudioChunkSink = {
   async handle(chunk): Promise<void> {
@@ -312,11 +305,7 @@ const capture = new AudioCapture(transcriptionSink, {
   onSinkError: (error) => renderBufferWarning(getErrorMessage(error)),
 });
 
-elements.newMeetingButton.addEventListener('click', () => {
-  clearPersistedMeetingDetail();
-  setAppState({ ...appState, view: 'home' });
-  elements.workspaceStartButton.focus();
-});
+elements.newMeetingButton.addEventListener('click', beginMeeting);
 elements.workspaceStartButton.addEventListener('click', () => {
   if (!appState.meetingStarted || appState.meetingEnded) {
     beginMeeting();
@@ -332,13 +321,13 @@ elements.meetingSearchInput.addEventListener('input', renderHomeState);
 elements.summaryToggleButton.addEventListener('click', () => {
   setSummaryExpanded(elements.summarySheetContent.hidden);
 });
-elements.setupForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  if (startAfterSettings) beginMeeting();
+elements.setupGroqModel.addEventListener('change', () => {
+  renderMeetingSetup();
+  saveGroqWhisperModelPreference(meetingSetupDraft.groqModel);
 });
-for (const input of [elements.setupLanguage, elements.setupProvider, elements.setupCorrection, elements.setupLiveSummary, elements.setupFinalSummary, elements.setupExternalAck]) {
+for (const input of [elements.setupLanguage, elements.setupCorrection, elements.setupLiveSummary, elements.setupExternalAck]) {
   input.addEventListener('input', () => {
-    if (input !== elements.setupLanguage && input !== elements.setupExternalAck) elements.setupExternalAck.checked = false;
+    if (input === elements.setupCorrection || input === elements.setupLiveSummary) elements.setupExternalAck.checked = false;
     renderMeetingSetup();
   });
 }
@@ -374,12 +363,8 @@ elements.startButton.addEventListener('click', () => {
 elements.reconnectButton.addEventListener('click', () => provider.reconnect?.());
 elements.endMeetingButton.addEventListener('click', openEndMeetingDialog);
 elements.cancelEndMeetingButton.addEventListener('click', closeEndMeetingDialog);
-elements.confirmEndMeetingButton.addEventListener('click', () => void finishMeeting());
-elements.endMeetingTitleInput.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter' || event.isComposing) return;
-  event.preventDefault();
-  void finishMeeting();
-});
+elements.confirmEndMeetingButton.addEventListener('click', () => void finishMeeting(false));
+elements.confirmEndMeetingWithSummaryButton.addEventListener('click', () => void finishMeeting(true));
 elements.latestTranscriptButton.addEventListener('click', scrollToLatestTranscript);
 elements.transcriptScroll.addEventListener('scroll', handleTranscriptScroll, { passive: true });
 elements.finalizeSentenceButton.addEventListener('click', () => {
@@ -411,18 +396,23 @@ window.addEventListener('pagehide', () => {
 function beginMeeting(): void {
   if (sessionTransition || finalSummaryController.retryInProgress || (appState.meetingStarted && !appState.meetingEnded)) return;
   const requirements = correctionExternalProcessingRequirements();
-  if (validateMeetingSetupDraft(meetingSetupDraft, requirements)) {
-    openSettings(true);
-    return;
-  }
-  const settings = createMeetingSettingsSnapshot(meetingSetupDraft, new Date().toISOString(), requirements);
+  const consent = meetingSetupDraft.externalProcessingAcknowledged;
+  const settings = createMeetingSettingsSnapshot({
+    ...meetingSetupDraft,
+    correctionEnabled: meetingSetupDraft.correctionEnabled && requirements.correctionStatusKnown
+      && (!requirements.correctionExternalTransmission || consent),
+    liveSummaryEnabled: meetingSetupDraft.liveSummaryEnabled && Boolean(requirements.summaryEnabled)
+      && (!requirements.summaryExternalTransmission || consent),
+    // Both start buttons disclose that starting a new recording sends audio to Groq.
+    externalProcessingAcknowledged: true,
+  }, new Date().toISOString(), requirements);
   closeSettings();
   setHistoryExpanded(false);
   clearPersistedMeetingDetail();
   resetMeetingData();
   setSummaryExpanded(false);
   meetingSettingsSnapshot = settings;
-  meetingSummaryExternalAllowed = Boolean(setupSummaryStatus?.enabled && setupSummaryStatus.apiUsed && meetingSetupDraft.externalProcessingAcknowledged);
+  meetingSummaryExternalAllowed = Boolean(settings.liveSummaryEnabled && setupSummaryStatus?.apiUsed && consent);
   currentMeetingId = createSessionId();
   meetingStartedAt = null;
   meetingEndedAt = null;
@@ -438,26 +428,25 @@ function renderMeetingSetup(): void {
   meetingSetupDraft = {
     ...meetingSetupDraft,
     language: elements.setupLanguage.value as MeetingSetupDraft['language'],
-    transcriptionProvider: elements.setupProvider.value as MeetingSetupDraft['transcriptionProvider'],
+    groqModel: isGroqWhisperModel(elements.setupGroqModel.value) ? elements.setupGroqModel.value : undefined,
     correctionEnabled: elements.setupCorrection.checked,
     liveSummaryEnabled: elements.setupLiveSummary.checked,
-    finalSummaryEnabled: elements.setupFinalSummary.checked,
     externalProcessingAcknowledged: elements.setupExternalAck.checked,
   };
-  const option = meetingTranscriptionCatalog.find((item) => item.id === meetingSetupDraft.transcriptionProvider);
   const requirements = correctionExternalProcessingRequirements();
-  const error = validateMeetingSetupDraft(meetingSetupDraft, requirements);
-  elements.setupProviderDescription.textContent = option?.description ?? '';
-  elements.setupExternalDescription.textContent = buildExternalProcessingDisclosure(meetingSetupDraft, requirements);
-  elements.setupExternalConfirmation.hidden = !requiresExternalProcessingAcknowledgement(meetingSetupDraft, requirements);
+  const disclosure = buildExternalProcessingDisclosure(meetingSetupDraft, requirements, false);
+  const error = validateMeetingSetupDraft({
+    ...meetingSetupDraft,
+    externalProcessingAcknowledged: !disclosure || meetingSetupDraft.externalProcessingAcknowledged,
+  }, requirements);
+  elements.setupExternalDescription.textContent = disclosure;
+  elements.setupExternalConfirmation.hidden = !disclosure;
   elements.setupError.textContent = error ?? '';
   elements.setupError.hidden = !error;
-  elements.setupCreateButton.hidden = !startAfterSettings;
-  elements.setupCreateButton.disabled = Boolean(error);
 }
 
-function refreshSetupSummaryStatus(): void {
-  if (summaryStatusRequest) return;
+function refreshSetupSummaryStatus(): Promise<void> {
+  if (summaryStatusRequest) return summaryStatusRequest;
   summaryStatusRequest = summaryClient.status().then((status) => {
     if (!pageUnloading) setupSummaryStatus = status;
   }).catch(() => {
@@ -466,6 +455,7 @@ function refreshSetupSummaryStatus(): void {
     summaryStatusRequest = null;
     if (!pageUnloading) renderMeetingSetup();
   });
+  return summaryStatusRequest;
 }
 
 function resetMeetingData(): void {
@@ -517,7 +507,7 @@ async function startSession(): Promise<void> {
     correctionCoordinator.add(transcriptStore.snapshot().completedSentences);
     void correctionCoordinator.initialize();
   }
-  if (!summaryCoordinator && (meetingSettingsSnapshot.liveSummaryEnabled || meetingSettingsSnapshot.finalSummaryEnabled)) {
+  if (!summaryCoordinator && meetingSettingsSnapshot.liveSummaryEnabled) {
     summaryCoordinator = createSummaryCoordinator(currentMeetingId || currentSessionId);
     void summaryCoordinator.initialize();
   }
@@ -538,6 +528,7 @@ async function startSession(): Promise<void> {
       sessionId: currentSessionId,
       language: meetingSettingsSnapshot.language as TranscriptionLanguage,
       audioFormat: capture.currentMimeType,
+      groqModel: meetingSettingsSnapshot.groqModel,
       callbacks: {
         onStateChange: renderTranscriptionState,
         onReconnectAttempt: (attempt, maxAttempts) => {
@@ -599,11 +590,14 @@ async function pauseSession(): Promise<void> {
   renderControls();
 }
 
-async function finishMeeting(): Promise<void> {
+async function finishMeeting(withSummary: boolean): Promise<void> {
   if (sessionTransition || elements.endMeetingDialog.hidden || !appState.meetingStarted || appState.meetingEnded) return;
-  meetingTitle = elements.endMeetingTitleInput.value.trim() || meetingTitle;
+  const approvedSummary = withSummary ? endSummaryStatus : null;
+  if (withSummary && !approvedSummary?.enabled) return;
+  const editedTitle = elements.endMeetingTitleInput.value.trim();
   closeEndMeetingDialog();
   if (captureState !== 'idle') await pauseSession();
+  meetingTitle = editedTitle && editedTitle !== meetingTitle ? editedTitle : suggestMeetingTitle();
   sessionTransition = true;
   renderControls();
   meetingEndedAt = Date.now();
@@ -613,7 +607,7 @@ async function finishMeeting(): Promise<void> {
     try {
       endedSnapshot = createEndedMeetingSnapshot({
         meetingId: currentMeetingId,
-        settingsSnapshot: settings,
+        settingsSnapshot: { ...settings, finalSummaryEnabled: withSummary },
         title: meetingTitle,
         startedAt: meetingStartedAt,
         endedAt: meetingEndedAt,
@@ -644,8 +638,9 @@ async function finishMeeting(): Promise<void> {
     sessionTransition = false;
     return;
   }
-  if (settings?.finalSummaryEnabled && !summaryCoordinator) {
-    summaryCoordinator = createSummaryCoordinator(currentMeetingId);
+  if (approvedSummary?.enabled && endedSnapshot) {
+    summaryCoordinator?.dispose();
+    summaryCoordinator = createSummaryCoordinator(currentMeetingId, approvedSummary.apiUsed, approvedSummary.provider);
   }
   const finalSummaryState = await finalSummaryController.complete(createFinalSummaryOptions(endedSnapshot));
   if (endedSnapshot) {
@@ -676,8 +671,7 @@ function createFinalSummaryOptions(snapshot: EndedMeetingSnapshot | null = ended
     provider: () => latestSummaryStatus?.provider ?? null,
     finalize: async (sentences) => {
       if (!summaryCoordinator) return null;
-      if (settings?.liveSummaryEnabled) await summaryCoordinator.waitForLive();
-      return summaryCoordinator.finalize(sentences);
+      return summaryCoordinator.finalize(sentences, latestLiveSummary);
     },
   };
 }
@@ -736,13 +730,17 @@ async function summarizeNow(): Promise<void> {
   }
 }
 
-function createSummaryCoordinator(meetingId: string): IncrementalSummaryCoordinator {
+function createSummaryCoordinator(
+  meetingId: string,
+  allowExternal = meetingSummaryExternalAllowed,
+  expectedProvider = setupSummaryStatus?.provider,
+): IncrementalSummaryCoordinator {
   return new IncrementalSummaryCoordinator(summaryClient, meetingId, envNumber('VITE_SUMMARY_SENTENCE_BATCH_SIZE', 3), {
     onStatus: renderSummaryStatus,
     onLiveSummary: renderLiveSummary,
     onUsage: renderUsage,
     onError: (error) => renderSummaryWarning(error.message),
-  }, meetingSummaryExternalAllowed, false, setupSummaryStatus?.provider);
+  }, allowExternal, false, expectedProvider);
 }
 
 function createCorrectionCoordinator(sessionId: string): CorrectionCoordinator {
@@ -1055,8 +1053,9 @@ function renderHomeState(): void {
   elements.homeActiveMeeting.hidden = !active;
   elements.newMeetingButton.hidden = active;
   elements.homeTitle.textContent = active ? '会議を続ける' : '新しい議事録';
-  elements.homeDescription.textContent = active ? '進行中の文字起こしに戻ります。' : '準備ができたら録音を始めます。';
-  const startLabel = active ? '進行中の会議へ戻る' : '新しい議事録を開始';
+  elements.homeDescription.textContent = active ? '進行中の文字起こしに戻ります。' : '録音した音声を文字起こしのためGroqに送信します。';
+  elements.homeSettingsButton.hidden = appState.view !== 'home';
+  const startLabel = active ? '進行中の会議へ戻る' : '新規会議';
   elements.workspaceStartButton.setAttribute('aria-label', startLabel);
   elements.workspaceStartButton.title = startLabel;
   renderMeetingHistoryList({
@@ -1403,16 +1402,16 @@ function setHistoryExpanded(expanded: boolean): void {
   elements.historyToggle.setAttribute('aria-expanded', String(expanded));
 }
 
-function openSettings(forRecording = false): void {
+function openSettings(): void {
+  if (appState.view !== 'home') return;
   if (elements.settingsPanel.hidden) settingsTrigger = document.activeElement as HTMLElement | null;
   const active = appState.meetingStarted && !appState.meetingEnded;
-  startAfterSettings = forRecording;
-  elements.setupForm.hidden = active;
+  elements.setupSettings.hidden = active;
   elements.meetingSettingsSummary.hidden = !active || !meetingSettingsSnapshot;
   elements.settingsPanel.hidden = false;
   elements.workspace.inert = true;
   renderMeetingSetup();
-  if (!active) refreshSetupSummaryStatus();
+  if (!active) void refreshSetupSummaryStatus();
   elements.settingsCloseButton.focus();
 }
 
@@ -1420,22 +1419,41 @@ function closeSettings(): void {
   if (elements.settingsPanel.hidden) return;
   elements.settingsPanel.hidden = true;
   elements.workspace.inert = false;
-  startAfterSettings = false;
   settingsTrigger?.focus();
   settingsTrigger = null;
 }
 
-function openEndMeetingDialog(): void {
-  if (sessionTransition || appState.meetingEnded || !elements.deleteMeetingHistoryDialog.hidden) return;
+function suggestMeetingTitle(): string {
   const transcript = transcriptStore.snapshot();
   const suggestedTitle = latestLiveSummary?.topic?.trim()
     || transcript.completedSentences.find((sentence) => sentence.displayText.trim())?.displayText
     || transcript.interimDisplayText;
   const hasDefaultTitle = meetingTitle === meetingSetupDraft.title || meetingTitle === '新しい会議';
-  elements.endMeetingTitleInput.value = hasDefaultTitle
+  return hasDefaultTitle
     ? suggestedTitle.replace(/\s+/gu, ' ').trim().slice(0, 80) || meetingTitle
     : meetingTitle;
+}
+
+function openEndMeetingDialog(): void {
+  if (sessionTransition || !appState.meetingStarted || appState.meetingEnded || !elements.deleteMeetingHistoryDialog.hidden) return;
+  elements.endMeetingTitleInput.value = suggestMeetingTitle();
+  endSummaryStatus = null;
+  elements.confirmEndMeetingWithSummaryButton.disabled = true;
+  elements.endMeetingSummaryStatus.textContent = '最終要約を利用できるか確認しています。';
   elements.endMeetingDialog.hidden = false;
+  void refreshSetupSummaryStatus().then(() => {
+    if (pageUnloading || elements.endMeetingDialog.hidden) return;
+    endSummaryStatus = setupSummaryStatus;
+    elements.confirmEndMeetingWithSummaryButton.disabled = !endSummaryStatus?.enabled;
+    if (!endSummaryStatus?.enabled) {
+      elements.endMeetingSummaryStatus.textContent = '現在は最終要約を利用できません。';
+    } else if (endSummaryStatus.apiUsed) {
+      const destination = endSummaryStatus.provider === 'groq' ? 'Groq' : 'OpenAI';
+      elements.endMeetingSummaryStatus.textContent = `最終要約とTODOを作る場合、文字起こしと途中要約を${destination}に送信します。`;
+    } else {
+      elements.endMeetingSummaryStatus.textContent = '最終要約とTODOを作成できます。';
+    }
+  });
   elements.workspace.inert = true;
   elements.endMeetingTitleInput.focus();
   elements.endMeetingTitleInput.select();

@@ -1,3 +1,4 @@
+import type { GroqWhisperModel } from '../../shared/protocol';
 import type { AudioChunk } from '../audio/types';
 import type { TranscriptCorrection } from '../../shared/correction';
 
@@ -107,6 +108,7 @@ export interface StartTranscriptionOptions {
   sessionId: string;
   language: TranscriptionLanguage;
   audioFormat: string;
+  groqModel?: GroqWhisperModel;
   callbacks?: SpeechToTextCallbacks;
 }
 

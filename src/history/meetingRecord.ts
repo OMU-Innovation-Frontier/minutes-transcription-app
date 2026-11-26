@@ -1,3 +1,4 @@
+import { isGroqWhisperModel } from '../../shared/protocol';
 import type { CorrectionStatus } from '../../shared/correction';
 import { validateFinalMeetingSummary, type FinalMeetingSummary } from '../../shared/summary';
 import type { MeetingSettingsSnapshot } from '../meetingSetup/meetingSetup';
@@ -255,6 +256,10 @@ function parseSettingsSnapshot(value: unknown): MeetingSettingsSnapshot {
   if (settings.language !== 'ja-JP' && settings.language !== 'en-US') throw new MeetingRecordValidationError();
   const transcriptionProvider = settings.transcriptionProvider;
   if (!isSpeechToTextProviderKind(transcriptionProvider)) throw new MeetingRecordValidationError();
+  const groqModel = settings.groqModel;
+  if (groqModel !== undefined && (transcriptionProvider !== 'groq-whisper' || !isGroqWhisperModel(groqModel))) {
+    throw new MeetingRecordValidationError();
+  }
   if (typeof settings.correctionEnabled !== 'boolean'
     || typeof settings.liveSummaryEnabled !== 'boolean'
     || typeof settings.finalSummaryEnabled !== 'boolean'
@@ -266,6 +271,7 @@ function parseSettingsSnapshot(value: unknown): MeetingSettingsSnapshot {
     title,
     language: settings.language,
     transcriptionProvider,
+    ...(groqModel === undefined ? {} : { groqModel }),
     correctionEnabled: settings.correctionEnabled,
     liveSummaryEnabled: settings.liveSummaryEnabled,
     finalSummaryEnabled: settings.finalSummaryEnabled,

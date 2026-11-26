@@ -19,7 +19,7 @@ describe('application shell markup', () => {
   });
 
   it('offers the primary new meeting action', () => {
-    expect(document.querySelector<HTMLButtonElement>('#new-meeting-button')?.getAttribute('aria-label')).toBe('新しい議事録');
+    expect(document.querySelector<HTMLButtonElement>('#new-meeting-button')?.getAttribute('aria-label')).toBe('新規会議');
     expect(document.querySelector('#home-view #workspace-start-button svg')).not.toBeNull();
     expect(document.querySelector('#meeting-search-input')?.getAttribute('type')).toBe('search');
   });
@@ -158,7 +158,8 @@ describe('application shell markup', () => {
 
   it('contains an explicit end meeting confirmation', () => {
     expect(document.querySelector('#end-meeting-dialog')?.textContent).toContain('この会議を終了しますか');
-    expect(document.querySelector('#confirm-end-meeting-button')).not.toBeNull();
+    expect(document.querySelector('#confirm-end-meeting-button')?.textContent).toBe('文字起こしだけ保存');
+    expect(document.querySelector('#confirm-end-meeting-with-summary-button')?.textContent).toBe('最終要約を作って保存');
   });
 
   it('provides a separate accessible irreversible history delete dialog', () => {

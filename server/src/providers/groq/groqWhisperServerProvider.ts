@@ -1,8 +1,8 @@
-import type { AudioFrameMetadata, WireLanguage } from '../../../../shared/protocol.js';
+import { DEFAULT_GROQ_WHISPER_MODEL, type AudioFrameMetadata, type GroqWhisperModel, type WireLanguage } from '../../../../shared/protocol.js';
 import { DEFAULT_VAD_CONFIGURATION, PcmUtteranceSegmenter, type PcmUtterance, type VadConfiguration } from '../local/pcmUtteranceSegmenter.js';
-import type { ServerRecognitionStatus, SttProvider, SttTranscriptResult } from '../types.js';
+import type { ServerRecognitionStatus, SttProvider, SttSessionConfig, SttTranscriptResult } from '../types.js';
 import { ServerProviderError } from '../types.js';
-import { GROQ_WHISPER_MODEL, groqError } from './groqWhisperClient.js';
+import { groqError } from './groqWhisperClient.js';
 import { GroqWhisperRuntime, type GroqWhisperJob } from './groqWhisperRuntime.js';
 
 export const GROQ_PCM_MIME_TYPE = 'audio/pcm;rate=16000;channels=1;format=s16le';
@@ -10,6 +10,7 @@ export const GROQ_PCM_MIME_TYPE = 'audio/pcm;rate=16000;channels=1;format=s16le'
 export class GroqWhisperServerProvider implements SttProvider {
   readonly id = 'groq-whisper';
   private sessionId = '';
+  private model: GroqWhisperModel = DEFAULT_GROQ_WHISPER_MODEL;
   private language: WireLanguage = 'ja';
   private sessionStartedAt = 0;
   private segmenter?: PcmUtteranceSegmenter;
@@ -24,10 +25,10 @@ export class GroqWhisperServerProvider implements SttProvider {
 
   constructor(
     private readonly runtime: GroqWhisperRuntime,
-    private readonly options: { vad: Partial<VadConfiguration>; stopTimeoutMs: number; now?: () => number },
+    private readonly options: { vad: Partial<VadConfiguration>; stopTimeoutMs: number; now?: () => number; model?: GroqWhisperModel },
   ) {}
 
-  async startSession(options: { sessionId: string; language: WireLanguage; mimeType: string; sampleRate?: number }): Promise<void> {
+  async startSession(options: SttSessionConfig): Promise<void> {
     if (options.language !== 'ja' && options.language !== 'en') throw groqError('groq_language_unsupported', false);
     if (options.mimeType !== GROQ_PCM_MIME_TYPE || (options.sampleRate !== undefined && options.sampleRate !== 16_000)) {
       throw groqError('groq_audio_format_unsupported', false);
@@ -41,6 +42,7 @@ export class GroqWhisperServerProvider implements SttProvider {
     }
     this.sessionId = options.sessionId;
     this.language = options.language;
+    this.model = options.groqModel ?? this.options.model ?? DEFAULT_GROQ_WHISPER_MODEL;
     this.sessionStartedAt = (this.options.now ?? Date.now)();
     this.utteranceSequence = 0;
     this.generation += 1;
@@ -124,7 +126,7 @@ export class GroqWhisperServerProvider implements SttProvider {
     const generation = this.generation;
     const utteranceId = `${this.sessionId}:groq-${String(++this.utteranceSequence).padStart(4, '0')}`;
     return {
-      sessionId: this.sessionId, utteranceId, language: this.language, utterance,
+      sessionId: this.sessionId, utteranceId, language: this.language, model: this.model, utterance,
       createdAt: (this.options.now ?? Date.now)(), generation,
       onStarted: (queueLength) => this.emitIfCurrent(generation, () => this.emitStatus('recognizing', utteranceId, { queueLength, audioDurationMs: utterance.audioDurationMs })),
       onCompleted: (result) => this.emitIfCurrent(generation, () => {
@@ -132,7 +134,7 @@ export class GroqWhisperServerProvider implements SttProvider {
         const endTime = this.sessionStartedAt + utterance.endFrame / 16_000 * 1_000;
         this.transcriptCallback({ sessionId: this.sessionId, segmentId: utteranceId, utteranceId, revision: 0,
           text: result.text, isFinal: true, language: this.language, startTime, endTime, provider: this.id,
-          model: GROQ_WHISPER_MODEL, processingTimeMs: result.processingTimeMs,
+          model: this.model, processingTimeMs: result.processingTimeMs,
           audioDurationMs: result.audioDurationMs, realTimeFactor: result.realTimeFactor });
         this.emitStatus('completed', utteranceId, result);
       }),
@@ -147,7 +149,7 @@ export class GroqWhisperServerProvider implements SttProvider {
   private emitStatus(state: ServerRecognitionStatus['state'], utteranceId?: string,
     values: Partial<Pick<ServerRecognitionStatus, 'queueLength' | 'audioDurationMs' | 'processingTimeMs' | 'realTimeFactor'>> = {}): void {
     this.statusCallback({ sessionId: this.sessionId, state, queueLength: values.queueLength ?? this.runtime.queueLength,
-      model: GROQ_WHISPER_MODEL, language: this.language, utteranceId, ...values });
+      model: this.model, language: this.language, utteranceId, ...values });
   }
 }
 

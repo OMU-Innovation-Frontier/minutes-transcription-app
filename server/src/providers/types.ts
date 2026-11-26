@@ -1,4 +1,4 @@
-import type { AudioFrameMetadata, TranscriptWireSegment, WireLanguage } from '../../../shared/protocol.js';
+import type { AudioFrameMetadata, GroqWhisperModel, TranscriptWireSegment, WireLanguage } from '../../../shared/protocol.js';
 
 export interface SttTranscriptResult {
   sessionId: string;
@@ -46,6 +46,7 @@ export class ServerProviderError extends Error {
 }
 
 export interface SttSessionConfig {
+  groqModel?: GroqWhisperModel;
   sessionId: string;
   language: WireLanguage;
   mimeType: string;
