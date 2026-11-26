@@ -8,7 +8,7 @@ describe('GroqWhisperClient', () => {
     const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
       expect(_input).toBe(GROQ_TRANSCRIPTION_ENDPOINT);
       expect(init?.method).toBe('POST');
-      expect(init?.redirect).toBe('error');
+      expect(init?.redirect).toBe('manual');
       expect(init?.headers).not.toHaveProperty('content-type');
       expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer placeholder');
       const body = init?.body as FormData;

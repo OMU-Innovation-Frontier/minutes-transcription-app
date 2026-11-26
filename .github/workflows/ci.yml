@@ -56,3 +56,8 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      - name: Validate the Cloudflare Worker bundle
+        run: |
+          pnpm run build:cloudflare
+          npm exec --yes --package=wrangler@4.168.0 -- wrangler deploy --dry-run

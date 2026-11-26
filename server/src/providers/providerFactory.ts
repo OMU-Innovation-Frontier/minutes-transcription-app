@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { isGroqWhisperModel, type ServerProviderRequest } from '../../../shared/protocol.js';
+import type { ServerProviderRequest } from '../../../shared/protocol.js';
 import type { ServerConfig } from '../config.js';
 import {
   assertFunAsrApiKey,
@@ -21,10 +21,7 @@ import { LocalRealtimeMetricsRecorder } from './local/localRealtimeMetrics.js';
 import { RealtimeDebugAudioStore } from './local/realtimeDebugAudio.js';
 import { MockServerSpeechToTextProvider } from './mockProvider.js';
 import type { SttProvider } from './types.js';
-import { GroqWhisperClient, groqError } from './groq/groqWhisperClient.js';
-import { GroqWhisperRuntime } from './groq/groqWhisperRuntime.js';
-import { GroqWhisperServerProvider } from './groq/groqWhisperServerProvider.js';
-import { GroqWhisperUsageGuard } from './groq/groqWhisperUsageGuard.js';
+import { createGroqWhisperProviderRuntime } from './groq/groqWhisperProviderRuntime.js';
 
 export interface ServerProviderRuntime {
   create(requestedProvider?: ServerProviderRequest): SttProvider;
@@ -70,18 +67,7 @@ export function createServerSpeechToTextProviderRuntime(
   const funAsrUsageGuard = createFunAsrUsageGuard(config, dependencies.now);
   const funAsrTransportFactory = dependencies.createFunAsrTransport
     ?? createLiveFunAsrTransportFactory(config, dependencies.createFunAsrWebSocket);
-  let groqRuntime: GroqWhisperRuntime | undefined;
-  const getGroqRuntime = (): GroqWhisperRuntime => {
-    groqRuntime ??= new GroqWhisperRuntime(
-      new GroqWhisperClient({ apiKey: config.groqApiKey, externalEnabled: config.externalEnabled,
-        timeoutMs: config.groqRequestTimeoutMs, fetch: dependencies.fetch }),
-      new GroqWhisperUsageGuard({ maxSessionSeconds: config.groqMaxAudioSecondsPerSession,
-        maxHourSeconds: config.groqMaxAudioSecondsPerHour, maxDaySeconds: config.groqMaxAudioSecondsPerDay }, dependencies.now),
-      { maxConcurrency: config.groqMaxConcurrency, maxQueueSize: config.groqMaxQueueSize,
-        maxSessions: config.maxSessions, now: dependencies.now },
-    );
-    return groqRuntime;
-  };
+  const groqRuntime = createGroqWhisperProviderRuntime(config, dependencies);
   return {
     create(requestedProvider) {
       const provider = requestedProvider === 'local-whisper' ? 'local'
@@ -112,27 +98,12 @@ export function createServerSpeechToTextProviderRuntime(
           randomUUID: dependencies.randomUUID,
         });
       }
-      if (provider === 'groq-whisper') {
-        if (!isGroqWhisperModel(config.groqModel)) throw groqError('groq_model_unsupported', false);
-        return new GroqWhisperServerProvider(getGroqRuntime(), {
-          model: config.groqModel,
-          stopTimeoutMs: config.groqStopTimeoutMs,
-          now: dependencies.now,
-          vad: {
-            silenceDurationMs: config.groqVadSilenceMs,
-            maxUtteranceDurationMs: config.groqVadMaxUtteranceMs,
-            minimumUtteranceDurationMs: config.groqVadMinimumUtteranceMs,
-            preSpeechBufferMs: config.groqVadPreSpeechMs,
-            rmsThreshold: config.groqVadRmsThreshold,
-            noiseFloorMultiplier: config.groqVadNoiseFloorMultiplier,
-          },
-        });
-      }
+      if (provider === 'groq-whisper') return groqRuntime.create();
       return new MockServerSpeechToTextProvider();
     },
     close: async () => {
       await localRuntime.close();
-      await groqRuntime?.close();
+      await groqRuntime.close();
       await metricsRecorder.close();
     },
   };

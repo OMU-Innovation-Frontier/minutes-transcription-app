@@ -1,5 +1,17 @@
 # Minutes Transcription App
 
+## Cloudflare Workers へのデプロイ
+
+本番の Worker は `minutes` です。Cloudflare Workers Builds では GitHub リポジトリの `main` を本番ブランチにし、リポジトリのルートを使用します。既存の本番シークレットは Worker 側で管理します。
+
+| 項目 | 設定 |
+| --- | --- |
+| ビルドコマンド | `npm exec --yes --package=pnpm@11.9.0 -- pnpm install --frozen-lockfile && npm exec --yes --package=pnpm@11.9.0 -- pnpm run build:cloudflare` |
+| デプロイコマンド | `npm exec --yes --package=wrangler@4.168.0 -- wrangler deploy` |
+| プレビュー ビルド | 無効 |
+
+ビルド環境に `NODE_VERSION=22.13.0` と `SKIP_DEPENDENCY_INSTALL=1` を設定します。GitHub CI では本番へのアップロードを伴わない Wrangler のドライランを実行します。
+
 ## サークル向けの限定公開
 
 合言葉による入室と全員共通の利用上限を有効にし、Render Free + Supabase Freeで動かす設定を追加しました。参加者へ渡すのはURLと合言葉だけです。管理者による外部サービスの設定と実機確認は別途必要です。[限定公開の設定・起動・参加者向け手順](docs/LIMITED_PILOT.md)を参照してください。

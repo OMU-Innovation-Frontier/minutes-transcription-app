@@ -15,6 +15,7 @@ export class LimitedAccess {
   private readonly recordings = new Map<string, { owner: string; endsAt: number; bytes: number; detachedUntil?: number }>();
   private pendingHttp = 0;
   private loginChecks = 0;
+  private quotaReady?: Promise<void>;
   private readonly sweeper: ReturnType<typeof setInterval>;
   onRevoke?: (session: AccessSession) => void;
 
@@ -25,10 +26,16 @@ export class LimitedAccess {
     this.sweeper.unref();
   }
   get cookieName(): string { return this.config.secure ? '__Host-minutes_access' : 'minutes_access'; }
+  prepareQuotas(): Promise<void> {
+    return this.quotaReady ??= this.quotas.initialize().catch((error: unknown) => {
+      this.quotaReady = undefined;
+      throw error;
+    });
+  }
   cookie(token: string, seconds: number): string {
     return `${this.cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${seconds}${this.config.secure ? '; Secure' : ''}`;
   }
-  authenticate(request: IncomingMessage): AccessSession | null {
+  authenticate(request: { headers: { cookie?: string } }): AccessSession | null {
     this.sweep();
     const raw = request.headers.cookie || '';
     if (raw.length > 4096) return null;
@@ -41,10 +48,11 @@ export class LimitedAccess {
   assertOrigin(request: IncomingMessage): void {
     if (request.headers.origin !== this.config.origin) throw new AccessError(403, 'access_origin', 'この接続元からは操作できません。');
   }
-  async login(request: IncomingMessage, response: ServerResponse, password: string): Promise<void> {
+  async login(request: IncomingMessage, response: ServerResponse, password: string, clientAddress?: string): Promise<void> {
     this.assertOrigin(request);
     this.sweep();
-    const address = hash(request.socket.remoteAddress || 'unknown'); // Never trust a forwarded IP supplied by the caller.
+    // Only use an explicit address from an adapter that trusts its reverse proxy.
+    const address = hash(clientAddress || request.socket.remoteAddress || 'unknown');
     this.attempt('all', 30); this.attempt(address, 5);
     if (this.loginChecks >= 2) throw new AccessError(429, 'access_login_limit', '時間をおいてから再試行してください。');
     this.loginChecks++;
@@ -79,7 +87,10 @@ export class LimitedAccess {
     if (resume || existing || this.recordings.size >= this.config.maxConnections) throw new AccessError(429, 'access_recording_limit', '録音の利用上限を確認してください。');
     // Insert before awaiting persistence, preventing simultaneous starts from exceeding the limit.
     this.recordings.set(key, { owner: session.id, endsAt: this.now() + this.config.recordingMs, bytes: 0 });
-    try { await this.quotas.reserve('starts'); } catch (error) { this.recordings.delete(key); throw error; }
+    try {
+      await this.prepareQuotas();
+      await this.quotas.reserve('starts');
+    } catch (error) { this.recordings.delete(key); throw error; }
   }
   async reserveAudio(session: AccessSession, id: string, bytes: number): Promise<void> {
     const lease = this.recordings.get(session.id + ':' + id);
@@ -99,7 +110,10 @@ export class LimitedAccess {
     if (!this.valid(session)) throw new AccessError(401, 'access_required', '合言葉を入力し直してください。');
     if (this.pendingHttp >= this.config.maxHttpConcurrent) throw new AccessError(429, 'access_busy', '処理中です。しばらくお待ちください。');
     this.pendingHttp++;
-    try { await this.quotas.reserve(kind); }
+    try {
+      await this.prepareQuotas();
+      await this.quotas.reserve(kind);
+    }
     catch (error) { this.pendingHttp--; throw error; }
     let released = false;
     return () => { if (!released) { released = true; this.pendingHttp--; } };

@@ -16,6 +16,7 @@
     "compare:local:realtime": "tsx server/src/providers/local/realtimeAudioCompareCli.ts",
     "build": "pnpm run build:frontend && pnpm run build:server",
     "build:frontend": "tsc -b && vite build --configLoader runner",
+    "build:cloudflare": "tsc -b && vite build --configLoader runner --mode cloudflare",
     "build:server": "tsc -p server/tsconfig.json",
     "preview": "vite preview",
     "verify:environment": "node scripts/verify-dev-environment.mjs",
