@@ -26,7 +26,7 @@ describe('Groq meeting summary provider', () => {
     expect(await provider.createFinalSummary(input)).toEqual(summary);
     const [url, init] = request.mock.calls[0]!;
     expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
-    expect(init).toMatchObject({ redirect: 'error', signal: expect.any(AbortSignal) });
+    expect(init).toMatchObject({ redirect: 'manual', signal: expect.any(AbortSignal) });
     const body = JSON.parse(String(init?.body));
     expect(body).toMatchObject({ model: 'openai/gpt-oss-20b', reasoning_effort: 'low', stream: false,
       max_completion_tokens: 2048, response_format: { type: 'json_schema', json_schema: { strict: true } } });

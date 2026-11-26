@@ -65,7 +65,7 @@ export class GroqCorrectionClient {
   private generation = 0;
 
   constructor(private readonly options: GroqCorrectionClientOptions) {
-    this.fetchImplementation = options.fetch ?? fetch;
+    this.fetchImplementation = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
   async complete(messages: readonly GroqCorrectionMessage[], signal: AbortSignal): Promise<unknown> {
@@ -87,7 +87,7 @@ export class GroqCorrectionClient {
         GROQ_CORRECTION_ENDPOINT,
         {
           method: 'POST',
-          redirect: 'error',
+          redirect: 'manual',
           headers: {
             Authorization: `Bearer ${this.options.apiKey}`,
             'Content-Type': 'application/json',
@@ -155,7 +155,10 @@ export class GroqCorrectionClient {
   }
 
   private async parseResponse(response: Response): Promise<unknown> {
-    if (!response.ok) throw mapHttpError(response.status);
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw mapHttpError(response.status);
+    }
     const contentType = response.headers.get('content-type')?.toLocaleLowerCase() ?? '';
     if (!contentType.includes('application/json')) throw correctionProviderError('invalid_content_type');
     const declaredLength = Number(response.headers.get('content-length'));

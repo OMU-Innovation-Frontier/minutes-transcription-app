@@ -16,7 +16,7 @@ export class GroqWhisperClient {
   private readonly fetchImplementation: typeof fetch;
 
   constructor(private readonly options: GroqWhisperClientOptions) {
-    this.fetchImplementation = options.fetch ?? fetch;
+    this.fetchImplementation = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
   assertConfigured(): void {
@@ -41,12 +41,15 @@ export class GroqWhisperClient {
       body.append('temperature', '0');
       const response = await this.fetchImplementation(GROQ_TRANSCRIPTION_ENDPOINT, {
         method: 'POST',
-        redirect: 'error',
+        redirect: 'manual',
         headers: { Authorization: `Bearer ${this.options.apiKey}` },
         body,
         signal: controller.signal,
       });
-      if (!response.ok) throw mapHttpError(response.status);
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        throw mapHttpError(response.status);
+      }
       const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
       if (!contentType.includes('application/json')) throw groqError('groq_response_invalid', false);
       const length = Number(response.headers.get('content-length'));

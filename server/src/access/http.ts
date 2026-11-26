@@ -21,7 +21,7 @@ export function loginPage(response: ServerResponse, status = 200): void {
   response.end(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Minutesへの入室</title><style>body{font-family:system-ui,sans-serif;margin:0;background:#fff;color:#151515}main{max-width:28rem;margin:10vh auto;padding:1.5rem}label{display:block;margin:1rem 0}input,button{box-sizing:border-box;width:100%;min-height:48px;padding:.75rem;font:inherit}button{background:#145dce;color:white;border:0;cursor:pointer}:focus-visible{outline:3px solid #145dce;outline-offset:3px}p{line-height:1.7}</style></head><body><main><h1>Minutesへの入室</h1><p>サークルの合言葉を入力してください。APIキーは入力しません。</p><p role="alert">${message}</p><form method="post" action="/auth/login"><label for="passphrase">合言葉</label><input id="passphrase" name="passphrase" type="password" autocomplete="current-password" required maxlength="256"><button type="submit">入室する</button></form></main></body></html>`);
 }
 
-export async function handleLogin(request: IncomingMessage, response: ServerResponse, gate: LimitedAccess): Promise<void> {
+export async function handleLogin(request: IncomingMessage, response: ServerResponse, gate: LimitedAccess, clientAddress?: string): Promise<void> {
   gate.assertOrigin(request);
   if (!request.headers['content-type']?.startsWith('application/x-www-form-urlencoded')) throw new AccessError(400, 'invalid_request', '入力形式を確認してください。');
   let length = 0;
@@ -35,7 +35,7 @@ export async function handleLogin(request: IncomingMessage, response: ServerResp
   const fields = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
   const password = fields.get('passphrase');
   if (fields.size !== 1 || !password || password.length > 256) throw new AccessError(400, 'invalid_request', '合言葉を確認してください。');
-  try { await gate.login(request, response, password); }
+  try { await gate.login(request, response, password, clientAddress); }
   catch (error) {
     if (error instanceof AccessError && [401, 429].includes(error.status)) { loginPage(response, error.status); return; }
     throw error;

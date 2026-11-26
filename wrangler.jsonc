@@ -1,0 +1,27 @@
+{
+  "name": "minutes",
+  "main": "server/src/cloudflare.ts",
+  "compatibility_date": "2026-11-24",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist-cloudflare",
+    "binding": "ASSETS",
+    "html_handling": "none",
+    "run_worker_first": true
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "MINUTES", "class_name": "MinutesDurableObject" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MinutesDurableObject"] }],
+  "vars": {
+    "APP_ACCESS_ENABLED": "true",
+    "APP_QUOTA_BACKEND": "supabase",
+    "STT_PROVIDER": "groq-whisper",
+    "STT_EXTERNAL_ENABLED": "true",
+    "SUMMARY_ENABLED": "true",
+    "SUMMARY_PROVIDER": "groq",
+    "SUMMARY_MAX_REQUESTS_PER_MEETING": "5"
+  },
+  "keep_vars": true
+}

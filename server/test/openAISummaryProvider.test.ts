@@ -24,7 +24,7 @@ describe('OpenAI final meeting summary', () => {
     expect(await provider.createFinalSummary(input)).toEqual(summary);
     const [url, init] = request.mock.calls[0]!;
     expect(url).toBe('https://api.openai.com/v1/responses');
-    expect(init).toMatchObject({ method: 'POST', redirect: 'error', signal: expect.any(AbortSignal) });
+    expect(init).toMatchObject({ method: 'POST', redirect: 'manual', signal: expect.any(AbortSignal) });
     const body = JSON.parse(String(init?.body));
     expect(body).toMatchObject({ store: false, max_output_tokens: 8192, model: 'configured-final-model', text: { format: { type: 'json_schema', strict: true } } });
     expect(JSON.parse(body.input)).toEqual({ expectedVersion: 1, liveSummary: null, completedSentences: input.sentences });

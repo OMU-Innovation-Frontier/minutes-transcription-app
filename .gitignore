@@ -1,6 +1,7 @@
 # Dependencies and generated builds
 node_modules/
 dist/
+dist-cloudflare/
 server/dist/
 coverage/
 *.tsbuildinfo
@@ -9,6 +10,9 @@ coverage/
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+.wrangler/
 
 # Runtime data: recordings, transcripts, summaries, evaluations, and models
 server/data/

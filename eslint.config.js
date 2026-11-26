@@ -3,7 +3,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'server/dist', '**/dist/**', 'coverage', '.codex-run-logs/**'] },
+  { ignores: ['dist', 'dist-cloudflare', 'server/dist', '**/dist/**', 'coverage', '.codex-run-logs/**'] },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -20,7 +20,7 @@ describe('GroqCorrectionClient', () => {
     const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
       expect(input).toBe(GROQ_CORRECTION_ENDPOINT);
       expect(init?.method).toBe('POST');
-      expect(init?.redirect).toBe('error');
+      expect(init?.redirect).toBe('manual');
       expect(init?.headers).toEqual({ Authorization: 'Bearer test-key', 'Content-Type': 'application/json' });
       expect(init?.signal).toBeInstanceOf(AbortSignal);
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;

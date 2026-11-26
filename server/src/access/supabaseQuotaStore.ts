@@ -7,7 +7,7 @@ export class SupabaseQuotaStore implements QuotaLedger {
   private ready = false;
   private audioCredit = 0;
   private creditDay = '';
-  constructor(private readonly config: AccessConfig, private readonly fetcher: typeof fetch = fetch,
+  constructor(private readonly config: AccessConfig, private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
     private readonly now: () => number = Date.now) {}
 
   async initialize(): Promise<void> {
@@ -47,11 +47,14 @@ export class SupabaseQuotaStore implements QuotaLedger {
   private async rpc(name: string, body: Record<string, unknown>): Promise<unknown> {
     try {
       const response = await this.fetcher(`${this.config.supabaseUrl}/rest/v1/rpc/${name}`, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(5000),
+        method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(5000),
         headers: { apikey: this.config.supabaseSecret || '', 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!response.ok || Number(response.headers.get('content-length') || 0) > 1024) throw unavailable();
+      if (!response.ok || Number(response.headers.get('content-length') || 0) > 1024) {
+        await response.body?.cancel().catch(() => undefined);
+        throw unavailable();
+      }
       const reader = response.body?.getReader();
       if (!reader) throw unavailable();
       const chunks: Uint8Array[] = []; let size = 0;

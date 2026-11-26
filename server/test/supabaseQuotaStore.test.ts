@@ -8,6 +8,20 @@ const json = (value: unknown) => new Response(JSON.stringify(value));
 const day = '2026-11-19';
 const now = () => Date.parse(day + 'T10:00:00Z');
 describe('remote quota ledger', () => {
+  it('uses the global receiver required by Worker runtime fetch', async () => {
+    const fetcher = vi.fn(async function (this: unknown) {
+      if (this !== globalThis) throw new TypeError('Unexpected fetch receiver');
+      return json(true);
+    });
+    vi.stubGlobal('fetch', fetcher);
+    try {
+      await expect(new SupabaseQuotaStore(settings()).initialize()).resolves.toBeUndefined();
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('requires initialization and does not send meeting data', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json(true)).mockResolvedValue(json({ day, granted: 1 }));
     const store = new SupabaseQuotaStore(settings(), fetcher, now);
@@ -15,7 +29,7 @@ describe('remote quota ledger', () => {
     await store.initialize(); await store.reserve('summary');
     const request = fetcher.mock.calls[1]![1]!;
     expect(JSON.parse(request.body as string)).toEqual({ p_counter: 'summary', p_amount: 1, p_batch: 1, p_limit: 2 });
-    expect(request.redirect).toBe('error'); expect(request.signal).toBeInstanceOf(AbortSignal);
+    expect(request.redirect).toBe('manual'); expect(request.signal).toBeInstanceOf(AbortSignal);
     expect(request.headers).not.toHaveProperty('Authorization');
   });
   it('prepays audio in ten second batches and never reuses credits after restart', async () => {

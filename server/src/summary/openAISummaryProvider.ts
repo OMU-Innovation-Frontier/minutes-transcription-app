@@ -41,7 +41,7 @@ export class OpenAISummaryProvider implements SummaryProvider {
   private disposed = false;
 
   constructor(private readonly options: OpenAISummaryProviderOptions) {
-    this.fetch = options.fetch ?? fetch;
+    this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
   async updateSummary(input: IncrementalSummaryInput): Promise<LiveMeetingSummary> {
@@ -115,7 +115,7 @@ export class OpenAISummaryProvider implements SummaryProvider {
       return await withAbort(controller.signal, async () => {
         const response = await this.fetch('https://api.openai.com/v1/responses', {
           method: 'POST',
-          redirect: 'error',
+          redirect: 'manual',
           signal: controller.signal,
           headers: {
             authorization: `Bearer ${this.options.apiKey}`,
