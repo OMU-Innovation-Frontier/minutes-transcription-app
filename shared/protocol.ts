@@ -6,6 +6,13 @@ export const MAX_SESSION_ID_BYTES = 128;
 
 export type WireLanguage = 'ja' | 'en';
 export type ServerProviderRequest = 'server-default' | 'local-whisper' | 'groq-whisper';
+export const DEFAULT_GROQ_WHISPER_MODEL = 'whisper-large-v3-turbo';
+export type GroqWhisperModel = typeof DEFAULT_GROQ_WHISPER_MODEL | 'whisper-large-v3';
+
+export function isGroqWhisperModel(value: unknown): value is GroqWhisperModel {
+  return value === DEFAULT_GROQ_WHISPER_MODEL || value === 'whisper-large-v3';
+}
+
 export type PcmEncoding = 'pcm_s16le';
 export type LocalWhisperErrorCode =
   | 'local_stt_disabled'
@@ -58,6 +65,7 @@ export type ResumeMessage = {
   audioFormat: string;
   lastAcknowledgedSequence: number;
   provider?: ServerProviderRequest;
+  groqModel?: GroqWhisperModel;
 };
 
 export type ResumedMessage = {
@@ -80,6 +88,7 @@ export type ClientControlMessage =
       language: WireLanguage;
       audioFormat: string;
       provider?: ServerProviderRequest;
+      groqModel?: GroqWhisperModel;
     }
   | ResumeMessage
   | {
@@ -241,11 +250,17 @@ export function parseClientControlMessage(text: string): ClientControlMessage {
     if (typeof value.audioFormat !== 'string' || value.audioFormat.length === 0 || value.audioFormat.length > 128) {
       throw new ProtocolValidationError('invalid_audio_format', '音声形式が不正です。');
     }
+    const provider = parseProviderRequest(value.provider);
+    const groqModel = value.groqModel;
+    if (groqModel !== undefined && (provider !== 'groq-whisper' || !isGroqWhisperModel(groqModel))) {
+      throw new ProtocolValidationError('groq_model_unsupported', '指定されたGroq音声認識モデルには対応していません。');
+    }
     const common = {
       sessionId: value.sessionId,
       language: value.language as WireLanguage,
       audioFormat: value.audioFormat,
-      provider: parseProviderRequest(value.provider),
+      provider,
+      ...(groqModel === undefined ? {} : { groqModel }),
     };
     if (value.type === 'resume') {
       assertSequence(value.lastAcknowledgedSequence, true);

@@ -1,4 +1,4 @@
-import type { WireLanguage } from '../../../../shared/protocol.js';
+import type { GroqWhisperModel, WireLanguage } from '../../../../shared/protocol.js';
 import { ServerProviderError } from '../types.js';
 import type { PcmUtterance } from '../local/pcmUtteranceSegmenter.js';
 import { createPcm16MonoWav } from './pcmToWav.js';
@@ -9,6 +9,7 @@ export interface GroqWhisperJob {
   sessionId: string;
   utteranceId: string;
   language: WireLanguage;
+  model: GroqWhisperModel;
   utterance: PcmUtterance;
   createdAt: number;
   generation: number;
@@ -116,7 +117,7 @@ export class GroqWhisperRuntime {
     try {
       if (this.authenticationFailed) throw groqError('groq_auth_failed', false);
       this.usage.reserve(job.sessionId, job.utterance.audioDurationMs);
-      const text = await this.client.transcribe(createPcm16MonoWav(job.utterance.pcm), job.language, controller.signal);
+      const text = await this.client.transcribe(createPcm16MonoWav(job.utterance.pcm), job.language, controller.signal, job.model);
       if (!this.activeSessions.has(job.sessionId) || controller.signal.aborted) return;
       const processingTimeMs = Math.max(0, (this.options.now ?? Date.now)() - startedAt);
       job.onCompleted({ text, processingTimeMs, audioDurationMs: job.utterance.audioDurationMs,

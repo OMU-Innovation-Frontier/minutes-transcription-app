@@ -16,14 +16,14 @@
 
 ## Groq Whisper STT MVP
 
-会議準備画面で`Groq Whisper（無料枠）`を選ぶと、ブラウザーで16 kHz mono PCM16へ変換したマイク音声を既存WebSocket経由でサーバーへ送り、VADで確定した発話だけをGroqへ送信します。モデルは`whisper-large-v3-turbo`、結果は発話終了後のfinal transcriptのみです。
+「新規会議」を押すとGroq Whisperで録音が始まります。ブラウザーで16 kHz mono PCM16へ変換した音声をWebSocket経由でサーバーへ送り、VADで確定した発話だけをGroqへ送信します。結果は発話終了後に表示します。
 
 セットアップ:
 
 1. Groqで利用者自身がAPIキーを作成し、ローカルの`.env`へ`GROQ_API_KEY`として設定します。
-2. `.env`で`STT_EXTERNAL_ENABLED=true`を設定します。必要なら`STT_PROVIDER=groq-whisper`と`VITE_TRANSCRIPTION_PROVIDER=groq-whisper`も設定します。
-3. サーバーとフロントエンドを起動し、会議準備画面でGroq Whisperを選択します。
-4. 外部処理の説明を読み、確認チェックを入れてから録音を開始します。
+2. `.env`で`STT_EXTERNAL_ENABLED=true`を設定し、サーバーとフロントエンドを起動します。
+3. モデルを比較する場合は、ホームの設定でWhisper Large V3 TurboかWhisper Large V3を選びます。「サーバーの既定モデル」は`GROQ_STT_MODEL`に従い、未設定時はWhisper Large V3 Turboを使います。
+4. 会議終了時に「文字起こしだけ保存」または「最終要約を作って保存」を選びます。最終要約にはサーバーの要約機能を有効にする必要があります。
 5. 無料枠とrate limitは変更される可能性があるため、利用前後にGroq Consoleで確認します。
 
 `GROQ_API_KEY`を`VITE_*`へ置かず、`.env`をcommitしないでください。音声は文字起こしのためGroqへ送信されます。APIキー、音声、会議内容、応答本文はログへ出しません。通常テストは注入したFake HTTPのみを使い、外部APIへ接続しません。
@@ -105,7 +105,6 @@ server/data/local-stt/bin/<version>/Release/whisper-cli.exe
 `.env`で次を明示します。
 
 ```dotenv
-VITE_TRANSCRIPTION_PROVIDER=local-whisper
 STT_PROVIDER=local
 STT_EXTERNAL_ENABLED=false
 LOCAL_STT_ENABLED=true

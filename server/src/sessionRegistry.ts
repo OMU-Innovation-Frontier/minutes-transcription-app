@@ -7,6 +7,7 @@ interface ActiveSession {
   language: WireLanguage;
   audioFormat: string;
   providerRequest?: ServerProviderRequest;
+  groqModel?: Extract<ClientControlMessage, { type: 'start' }>['groqModel'];
   provider: SttProvider;
   lastReceivedSequence: number;
   connectionId: number | null;
@@ -51,6 +52,7 @@ export class TranscriptionSessionRegistry {
       language: message.language,
       audioFormat: message.audioFormat,
       providerRequest: message.provider,
+      groqModel: message.groqModel,
       provider,
       lastReceivedSequence: -1,
       connectionId,
@@ -64,6 +66,7 @@ export class TranscriptionSessionRegistry {
         sessionId: message.sessionId,
         language: message.language,
         mimeType: message.audioFormat,
+        groqModel: message.groqModel,
       });
     } catch (error) {
       await provider.dispose();
@@ -83,7 +86,7 @@ export class TranscriptionSessionRegistry {
       throw new ProtocolValidationError('session_stopped', '停止済みセッションは再開できません。');
     }
     if (session.language !== message.language || session.audioFormat !== message.audioFormat
-      || session.providerRequest !== message.provider) {
+      || session.providerRequest !== message.provider || session.groqModel !== message.groqModel) {
       throw new ProtocolValidationError('resume_mismatch', '再開時の言語または音声形式が開始時と一致しません。');
     }
     clearTimeout(session.cleanupTimer);

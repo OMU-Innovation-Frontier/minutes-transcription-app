@@ -57,7 +57,6 @@ server/data/local-stt/models/ggml-small-q5_1.bin
 `.env`へ、実ファイルのリポジトリ相対パスと、上で確認した64文字のSHA-256を設定します。
 
 ```dotenv
-VITE_TRANSCRIPTION_PROVIDER=local-whisper
 STT_PROVIDER=local
 STT_EXTERNAL_ENABLED=false
 LOCAL_STT_ENABLED=true
@@ -75,7 +74,7 @@ pnpm run verify:environment
 pnpm run dev:server
 ```
 
-フロントエンドの開発サーバーも再起動します。
+ブラウザーの「新規会議」はGroq Whisperを使います。この設定はLocal Whisperのサーバー側の検証に使います。
 
 ## 4. Apple SiliconでMLX Whisperを使う
 
@@ -102,7 +101,6 @@ shasum -a 256 server/data/local-stt/models/mlx/whisper-large-v3-turbo/weights.sa
 `.env`を次のように設定します。
 
 ```dotenv
-VITE_TRANSCRIPTION_PROVIDER=local-whisper
 STT_PROVIDER=local
 STT_EXTERNAL_ENABLED=false
 LOCAL_STT_ENABLED=true

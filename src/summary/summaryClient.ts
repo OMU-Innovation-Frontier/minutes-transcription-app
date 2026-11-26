@@ -179,7 +179,7 @@ export class IncrementalSummaryCoordinator {
     return this.inFlight;
   }
 
-  async finalize(sentences: readonly CompletedSentence[]): Promise<SummaryFinalizationResult> {
+  async finalize(sentences: readonly CompletedSentence[], liveSummary = this.liveSummary): Promise<SummaryFinalizationResult> {
     const generation = this.generation;
     await this.initialize();
     if (!this.isCurrent(generation)) return { status: 'failed', reason: 'stale' };
@@ -190,7 +190,7 @@ export class IncrementalSummaryCoordinator {
     const finalSentences = toUniqueSummarySentences(sentences);
     const operation = (async (): Promise<SummaryFinalizationResult> => {
       try {
-        const result = await this.client.finalize(this.meetingId, this.liveSummary, finalSentences, this.statusValue.provider);
+        const result = await this.client.finalize(this.meetingId, liveSummary, finalSentences, this.statusValue.provider);
         if (!this.isCurrent(generation)) return { status: 'failed', reason: 'stale' };
         this.finalSummary = result;
         this.callbacks.onFinalSummary?.(result);

@@ -81,6 +81,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
   private callbacks: SpeechToTextCallbacks = {};
   private sessionId = '';
   private language: TranscriptionLanguage = 'ja-JP';
+  private groqModel: StartTranscriptionOptions['groqModel'];
   private audioFormat = 'application/octet-stream';
   private generation = 0;
   private transcriptSequence = 0;
@@ -160,6 +161,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
     this.sessionId = options.sessionId;
     this.language = options.language;
     this.audioFormat = options.audioFormat;
+    this.groqModel = this.requestedProvider === 'groq-whisper' ? options.groqModel : undefined;
     this.transcriptSequence = 0;
     this.active = true;
     this.stopRequested = false;
@@ -297,6 +299,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
         sessionId: this.sessionId,
         language: toWireLanguage(this.language),
         audioFormat: this.audioFormat,
+        ...(this.groqModel ? { groqModel: this.groqModel } : {}),
         ...(this.requestedProvider !== 'server-default' ? { provider: this.requestedProvider } : {}),
       };
       if (resume) {

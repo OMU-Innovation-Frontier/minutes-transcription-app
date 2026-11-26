@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import type { ServerProviderRequest } from '../../../shared/protocol.js';
+import { isGroqWhisperModel, type ServerProviderRequest } from '../../../shared/protocol.js';
 import type { ServerConfig } from '../config.js';
 import {
   assertFunAsrApiKey,
@@ -21,7 +21,7 @@ import { LocalRealtimeMetricsRecorder } from './local/localRealtimeMetrics.js';
 import { RealtimeDebugAudioStore } from './local/realtimeDebugAudio.js';
 import { MockServerSpeechToTextProvider } from './mockProvider.js';
 import type { SttProvider } from './types.js';
-import { GroqWhisperClient, GROQ_WHISPER_MODEL, groqError } from './groq/groqWhisperClient.js';
+import { GroqWhisperClient, groqError } from './groq/groqWhisperClient.js';
 import { GroqWhisperRuntime } from './groq/groqWhisperRuntime.js';
 import { GroqWhisperServerProvider } from './groq/groqWhisperServerProvider.js';
 import { GroqWhisperUsageGuard } from './groq/groqWhisperUsageGuard.js';
@@ -72,7 +72,6 @@ export function createServerSpeechToTextProviderRuntime(
     ?? createLiveFunAsrTransportFactory(config, dependencies.createFunAsrWebSocket);
   let groqRuntime: GroqWhisperRuntime | undefined;
   const getGroqRuntime = (): GroqWhisperRuntime => {
-    if (config.groqModel !== GROQ_WHISPER_MODEL) throw groqError('groq_model_unsupported', false);
     groqRuntime ??= new GroqWhisperRuntime(
       new GroqWhisperClient({ apiKey: config.groqApiKey, externalEnabled: config.externalEnabled,
         timeoutMs: config.groqRequestTimeoutMs, fetch: dependencies.fetch }),
@@ -114,7 +113,9 @@ export function createServerSpeechToTextProviderRuntime(
         });
       }
       if (provider === 'groq-whisper') {
+        if (!isGroqWhisperModel(config.groqModel)) throw groqError('groq_model_unsupported', false);
         return new GroqWhisperServerProvider(getGroqRuntime(), {
+          model: config.groqModel,
           stopTimeoutMs: config.groqStopTimeoutMs,
           now: dependencies.now,
           vad: {
