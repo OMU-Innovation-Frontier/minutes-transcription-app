@@ -11,7 +11,7 @@
       <div id="workspace" class="workspace">
         <aside id="workspace-sidebar" class="workspace-sidebar" aria-label="会議メニュー">
           <div class="sidebar-header">
-            <div class="brand"><span class="brand__mark" aria-hidden="true">M</span><span>Minutes</span></div>
+            <div class="brand"><span>Minutes</span></div>
             <button id="new-meeting-button" class="workspace-icon" type="button" aria-label="新規会議" title="新規会議" aria-description="録音した音声を文字起こしのためGroqに送信します。"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
             <div id="home-active-meeting" hidden>
               <button id="resume-meeting-button" class="secondary-button" type="button">現在の会議</button>
@@ -21,8 +21,8 @@
             <button id="sidebar-collapse-button" class="workspace-icon" type="button" aria-label="議事録一覧を閉じる" title="議事録一覧を閉じる" aria-controls="workspace-sidebar"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
           </div>
           <section id="sidebar-history" class="meeting-history" aria-labelledby="history-title">
-            <h2 id="history-title" tabindex="-1">会議履歴</h2>
             <label class="history-search"><span class="sr-only">議事録を検索</span><input id="meeting-search-input" type="search" placeholder="会議名、文字起こしを検索" autocomplete="off" /></label>
+            <h2 id="history-title" tabindex="-1">議事録</h2>
             <p id="history-search-empty" class="history-status" role="status" hidden>一致する議事録がありません。</p>
             <p id="home-history-notification" class="inline-alert" role="status" aria-live="polite" tabindex="-1" hidden aria-hidden="true"></p>
             <div id="home-history-status" class="history-status" role="status" aria-live="polite">
@@ -39,7 +39,6 @@
           <button id="sidebar-open-button" class="workspace-icon" type="button" aria-label="議事録一覧を開く" title="議事録一覧を開く" aria-controls="workspace-sidebar" hidden><svg class="" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
           <section id="home-view" class="app-view home-view" aria-labelledby="home-title">
             <div class="home-hero">
-              <span class="brand__mark" aria-hidden="true">M</span>
               <h1 id="home-title">会議を記録する</h1>
               <p id="home-description">録音した音声を文字起こしのためGroqに送信します。</p>
               <button id="workspace-start-button" class="workspace-icon workspace-start" type="button" aria-label="新規会議" title="新規会議" aria-describedby="home-description"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7Z"/></svg></button>
@@ -52,19 +51,16 @@
               <div class="meeting-heading">
                 <h1 id="meeting-title" tabindex="-1">新規会議</h1>
               </div>
-              <div class="meeting-header__status">
+              <div class="meeting-header__status sr-only">
                 <div id="recording-status" class="meeting-state" role="status" aria-live="polite">
-                  <span class="meeting-state__dot" aria-hidden="true"></span>
                   <span id="recording-status-label">会議開始前</span>
                 </div>
-                <time id="elapsed-time" class="meeting-timer">00:00</time>
               </div>
             </header>
 
             <div class="meeting-notices">
                 <div class="connection-row">
                   <div id="recognition-status" class="connection-status" role="status" aria-live="polite">
-                    <span class="connection-status__dot" aria-hidden="true"></span>
                     <span id="recognition-status-label">接続待ち</span>
                   </div>
                   <div id="connection-note" class="connection-note" role="status" hidden></div>
@@ -91,11 +87,11 @@
                 <section id="summary-sheet" class="live-summary" aria-labelledby="summary-title">
                   <div class="content-heading">
                     <h2 id="summary-title">途中要約</h2>
+                    <button id="summarize-now-button" type="button" class="secondary-button" disabled>ここまでを要約</button>
                     <button id="summary-toggle-button" class="quiet-button summary-toggle" type="button" aria-expanded="false" aria-controls="summary-sheet-content">要約を表示</button>
                   </div>
                   <div id="summary-sheet-content" class="summary-sheet-content" hidden>
                     <span id="summary-provider-status" class="subtle-status">要約を確認中</span>
-                    <button id="summarize-now-button" type="button" class="secondary-button" disabled>ここまでを要約</button>
                     <p id="manual-summary-status" role="status" aria-live="polite"></p>
                     <div class="panel-scroll" tabindex="0" role="region" aria-label="途中要約の内容">
                       <details id="live-summary-details" class="summary-details" open>
@@ -121,8 +117,9 @@
             <div id="latest-announcement" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
             <footer class="meeting-controls" aria-label="録音操作">
+              <time id="elapsed-time" class="meeting-timer">00:00</time>
               <div class="meeting-controls__inner">
-                <div class="microphone-level">
+                <div class="microphone-level sr-only">
                   <span id="microphone-state">マイク待機中</span>
                   <div id="level-meter" class="level-meter" role="meter" aria-label="マイク入力レベル" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div id="level-bar" class="level-meter__bar"></div>
@@ -160,8 +157,11 @@
                   </div>
                 </section>
                 <section id="detail-summary-section" class="detail-summary" aria-labelledby="detail-summary-title">
+                  <div class="detail-summary-heading">
                   <h2 id="detail-summary-title">簡易要約</h2>
-                  <div class="panel-scroll" tabindex="0" role="region" aria-label="会議の要約">
+                  <button id="detail-summary-toggle" type="button" aria-label="要約を表示" aria-expanded="false" aria-controls="detail-summary-content">要約を表示</button>
+                  </div>
+                  <div id="detail-summary-content" class="panel-scroll" tabindex="0" role="region" aria-label="会議の要約" hidden>
                     <p id="detail-summary-text" role="status" aria-live="polite">会議内容が増えると、ここに簡易要約が表示されます。</p>
                     <div id="final-summary" class="final-summary" aria-label="最終要約とTODO" hidden></div>
                   </div>
@@ -305,7 +305,6 @@
       <section id="delete-meeting-history-dialog" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description" tabindex="-1" hidden aria-hidden="true">
         <div class="confirm-dialog__backdrop" aria-hidden="true"></div>
         <div class="confirm-dialog__body">
-          <p class="section-kicker">DELETE HISTORY</p>
           <h2 id="delete-dialog-title" tabindex="-1">この会議履歴を削除しますか？</h2>
           <div id="delete-dialog-description">
             <p>対象会議: <strong id="delete-meeting-history-title"></strong></p>

@@ -1,6 +1,8 @@
 import { createMeetingRecord } from './history/meetingRecord';
 import { loadMeetingDraft, saveMeetingDraft, removeMeetingDraft } from './history/meetingDraft';
 import './styles.css';
+import './ui/workspace.css';
+import { initializeWorkspacePresentation } from './ui/workspacePresentation';
 import { downloadMeetingFile } from './history/meetingExport';
 import { initializeMeetingShareDialog } from './history/meetingShareDialog';
 import type { LiveMeetingSummary, MeetingUsageSummary } from '../shared/summary';
@@ -400,6 +402,7 @@ elements.clearTranscriptButton.addEventListener('click', () => {
 elements.transcriptView.addEventListener('change', renderTranscript);
 window.addEventListener('keydown', handleGlobalKeydown);
 window.addEventListener('pagehide', () => {
+  disposeWorkspacePresentation();
   transcriptStore.finalizeRecording();
   persistActiveMeeting();
   pageUnloading = true;
@@ -1063,6 +1066,7 @@ function replaceList(element: HTMLUListElement, values: string[]): void {
 }
 
 function setAppState(next: AppViewState): void {
+  const viewChanged = appState.view !== next.view;
   appState = next;
   applyAppView(appState.view, {
     home: elements.homeView,
@@ -1071,6 +1075,9 @@ function setAppState(next: AppViewState): void {
   });
   renderHomeState();
   renderControls();
+  if (viewChanged && window.matchMedia?.('(max-width: 760px)').matches) {
+    setSidebarCollapsed(appState.view !== 'home');
+  }
   if (appState.view === 'meeting-detail') renderDetailView();
 }
 
@@ -1406,6 +1413,8 @@ function setSidebarCollapsed(collapsed: boolean): void {
   elements.workspace.dataset.sidebarCollapsed = String(collapsed);
   elements.sidebar.hidden = collapsed;
   elements.sidebarOpenButton.hidden = !collapsed;
+  const main = elements.workspace.querySelector<HTMLElement>('.workspace-main');
+  if (main) main.inert = !collapsed && Boolean(window.matchMedia?.('(max-width: 760px)').matches);
   setHistoryExpanded(false);
   if (collapsed) elements.sidebarOpenButton.focus();
   else elements.sidebarCollapseButton.focus();
@@ -1554,6 +1563,7 @@ function renderSummaryWarning(message: string): void {
 }
 
 function getErrorMessage(error: unknown): string {
+  if (error instanceof TypeError) return 'サーバーに接続できません。接続状態とサーバーの起動を確認してください。';
   if (error instanceof Error) return error.message;
   if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message;
   return '音声処理中に問題が発生しました。';
@@ -1664,6 +1674,7 @@ function recoverActiveMeeting(): void {
 }
 
 recoverActiveMeeting();
+const disposeWorkspacePresentation = initializeWorkspacePresentation();
 renderMeetingSetup();
 if (import.meta.env.PROD) {
   void fetch('/auth/session').then(async response => {
