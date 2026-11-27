@@ -1,7 +1,8 @@
 import { createMeetingRecord } from './history/meetingRecord';
 import { loadMeetingDraft, saveMeetingDraft, removeMeetingDraft } from './history/meetingDraft';
 import './styles.css';
-import { downloadMeetingFile, meetingExportFilename, shareMeeting } from './history/meetingExport';
+import { downloadMeetingFile } from './history/meetingExport';
+import { initializeMeetingShareDialog } from './history/meetingShareDialog';
 import type { LiveMeetingSummary, MeetingUsageSummary } from '../shared/summary';
 import type { CorrectionServiceStatus } from '../shared/correction';
 import { AudioCapture } from './audio/audioCapture';
@@ -30,6 +31,7 @@ import {
 } from './history/meetingHistoryListView';
 import {
   createEndedMeetingSnapshot,
+  createRecordFromEndedMeeting,
   MEETING_HISTORY_SAVE_WARNING,
   MeetingHistoryPersistenceCoordinator,
   saveSucceededFinalSummary,
@@ -137,6 +139,8 @@ const elements = {
   confirmEndMeetingWithSummaryButton: requiredElement<HTMLButtonElement>('confirm-end-meeting-with-summary-button'),
   endMeetingSummaryStatus: requiredElement<HTMLElement>('end-meeting-summary-status'),
   detailTitle: requiredElement<HTMLElement>('detail-title'),
+  detailShareButton: requiredElement<HTMLButtonElement>('detail-share-button'),
+  meetingShareDialog: requiredElement<HTMLDialogElement>('meeting-share-dialog'),
   detailDate: requiredElement<HTMLElement>('detail-date'),
   detailHistoryStatus: requiredElement<HTMLElement>('detail-history-status'),
   detailHistoryStatusMessage: requiredElement<HTMLElement>('detail-history-status-message'),
@@ -284,6 +288,13 @@ const meetingHistoryDeleteController = new MeetingHistoryDeleteController(
   meetingHistoryRepository,
   handleMeetingHistoryDeleteChange,
 );
+const meetingShareDialog = initializeMeetingShareDialog({
+  dialog: elements.meetingShareDialog,
+  title: requiredElement<HTMLElement>('meeting-share-title'),
+  download: requiredElement<HTMLButtonElement>('meeting-share-download'),
+  nativeShare: requiredElement<HTMLButtonElement>('meeting-share-native'),
+  status: requiredElement<HTMLElement>('meeting-share-status'),
+});
 
 elements.setupGroqModel.value = loadGroqWhisperModelPreference() ?? '';
 elements.setupLanguage.value = meetingSetupDraft.language;
@@ -346,6 +357,18 @@ elements.renameMeetingHistoryForm.addEventListener('submit', (event) => {
 });
 elements.homeHistoryRetryButton.addEventListener('click', () => void meetingHistoryListController.retry());
 elements.detailHomeButton.addEventListener('click', returnHomeFromDetail);
+elements.detailShareButton.addEventListener('click', () => {
+  const history = meetingHistoryDetailController.state;
+  if (meetingDetailSource?.kind === 'persisted') {
+    if (history.status === 'ready') meetingShareDialog.open(history.record);
+  } else if (endedMeetingSnapshot && !sessionTransition && !finalSummaryController.retryInProgress) {
+    const summary = finalSummaryController.state;
+    meetingShareDialog.open(createRecordFromEndedMeeting(
+      { ...endedMeetingSnapshot, title: meetingTitle },
+      summary.status === 'succeeded' ? summary.record : null,
+    ));
+  }
+});
 elements.detailHistoryRetryButton.addEventListener('click', () => void meetingHistoryDetailController.retry());
 elements.deleteMeetingHistoryButton.addEventListener('click', openDeleteMeetingHistoryDialog);
 elements.cancelDeleteMeetingHistoryButton.addEventListener('click', cancelDeleteMeetingHistory);
@@ -967,6 +990,8 @@ function resetSummaryView(): void {
 
 function renderDetailView(): void {
   if (meetingDetailSource?.kind === 'persisted') {
+    elements.detailShareButton.hidden = meetingHistoryDetailController.state.status !== 'ready';
+    elements.detailShareButton.disabled = false;
     renderPersistedMeetingHistoryDetail({
       title: elements.detailTitle,
       date: elements.detailDate,
@@ -986,6 +1011,8 @@ function renderDetailView(): void {
     return;
   }
 
+  elements.detailShareButton.hidden = !endedMeetingSnapshot;
+  elements.detailShareButton.disabled = sessionTransition || finalSummaryController.retryInProgress;
   elements.detailHistoryStatus.hidden = true;
   elements.detailHistoryRetryButton.hidden = true;
   elements.detailSummarySection.hidden = false;
@@ -1068,42 +1095,33 @@ function renderHomeState(): void {
   }, meetingHistoryListController.state, currentPageMeetingHistory(), (value) => formatMeetingDate(Date.parse(value)), openPersistedMeetingDetail, {
     onDelete: openHomeDeleteMeetingHistoryDialog,
     onRename: openRenameMeetingHistory,
-    onPdf: (meetingId) => void exportMeetingFromHome(meetingId, 'pdf'),
-    onShare: (meetingId) => void exportMeetingFromHome(meetingId, 'share'),
+    onPdf: (meetingId) => void exportMeetingPdfFromHome(meetingId),
+    onShare: (meetingId) => {
+      const record = meetingHistoryListController.state.records.find((item) => item.meetingId === meetingId);
+      if (record) meetingShareDialog.open(record);
+      else showHistoryNotification('会議履歴が見つかりません。履歴を再読み込みしてください。', true);
+    },
     disabled: (meetingId) => meetingHistoryDeleteController.state.status === 'deleting'
       || historyExportInProgress
       || (meetingId === currentMeetingId && (sessionTransition || finalSummaryController.retryInProgress)),
   }, elements.meetingSearchInput.value);
 }
 
-async function exportMeetingFromHome(meetingId: string, mode: 'pdf' | 'share'): Promise<void> {
+async function exportMeetingPdfFromHome(meetingId: string): Promise<void> {
   if (historyExportInProgress || meetingHistoryDeleteController.state.status === 'deleting') return;
   const record = meetingHistoryListController.state.records.find((item) => item.meetingId === meetingId);
   if (!record) { showHistoryNotification('会議履歴が見つかりません。履歴を再読み込みしてください。', true); return; }
-  if (mode === 'pdf' && !record.finalSummary) {
-    showHistoryNotification('最終要約を作成してからPDFを保存してください。', true);
-    return;
-  }
   historyExportInProgress = true;
   renderHomeState();
   try {
-    if (mode === 'share') {
-      const result = await shareMeeting(record);
-      if (!pageUnloading) showHistoryNotification(result === 'downloaded'
-        ? '共有用テキストをダウンロードしました。送りたい相手に添付してください。'
-        : result === 'cancelled' ? '共有をキャンセルしました。' : '共有先への受け渡しが完了しました。', false);
-    } else {
-      showHistoryNotification('PDFを作成しています。', false);
-      const { createMeetingPdf } = await import('./history/meetingPdf');
-      const bytes = await createMeetingPdf(record);
-      if (pageUnloading) return;
-      downloadMeetingFile(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }), meetingExportFilename(record, 'pdf'));
-      showHistoryNotification('PDFのダウンロードを開始しました。', false);
-    }
+    showHistoryNotification('PDFを作成しています。', false);
+    const { createMeetingPdfFile } = await import('./history/meetingPdf');
+    const file = await createMeetingPdfFile(record);
+    if (pageUnloading) return;
+    downloadMeetingFile(file, file.name);
+    showHistoryNotification('PDFのダウンロードを開始しました。', false);
   } catch {
-    if (!pageUnloading) showHistoryNotification(mode === 'pdf'
-      ? 'PDFを作成できませんでした。時間をおいてもう一度お試しください。'
-      : '共有できませんでした。PDFをダウンロードして添付することもできます。', true);
+    if (!pageUnloading) showHistoryNotification('PDFを作成できませんでした。時間をおいてもう一度お試しください。', true);
   } finally {
     historyExportInProgress = false;
     if (!pageUnloading) { renderHomeState(); elements.historyTitle.focus(); }
@@ -1355,6 +1373,7 @@ function hideHistoryNotification(): void {
 }
 
 function handleGlobalKeydown(event: KeyboardEvent): void {
+  if (elements.meetingShareDialog.open) return;
   if (handleMeetingHistoryDeleteDialogKeydown({
     actions: elements.persistedDetailActions,
     deleteButton: elements.deleteMeetingHistoryButton,

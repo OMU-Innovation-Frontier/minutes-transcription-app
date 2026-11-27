@@ -141,7 +141,10 @@
                 <h1 id="detail-title" tabindex="-1">新規会議</h1>
                 <p id="detail-date" class="detail-date"></p>
               </div>
-              <button id="detail-home-button" class="back-button" type="button">閉じる</button>
+              <div class="detail-header__actions">
+                <button id="detail-share-button" class="secondary-button" type="button" aria-haspopup="dialog" hidden>共有</button>
+                <button id="detail-home-button" class="back-button" type="button">閉じる</button>
+              </div>
             </header>
             <div class="detail-main">
               <section id="detail-history-status" class="detail-history-status" role="status" aria-live="polite" hidden>
@@ -259,6 +262,34 @@
           </div>
         </div>
       </section>
+      <dialog id="meeting-share-dialog" class="meeting-share-dialog" aria-labelledby="meeting-share-heading" aria-describedby="meeting-share-title">
+        <header class="meeting-share-dialog__header">
+          <div>
+            <h2 id="meeting-share-heading">議事録のPDFを共有</h2>
+            <p id="meeting-share-title"></p>
+          </div>
+          <form method="dialog"><button class="back-button" type="submit">閉じる</button></form>
+        </header>
+        <ul class="meeting-share-dialog__destinations">
+          <li>
+            <a href="mailto:" aria-describedby="meeting-share-mail-hint">メールを開く</a>
+            <p id="meeting-share-mail-hint">保存したPDFを下書きに添付します。</p>
+          </li>
+          <li>
+            <strong>LINE</strong>
+            <p>保存したPDFをトークに添付します。</p>
+          </li>
+          <li>
+            <a href="https://discord.com/channels/@me" target="_blank" rel="noopener noreferrer" aria-describedby="meeting-share-discord-hint">Discordを開く</a>
+            <p id="meeting-share-discord-hint">保存したPDFをチャンネルやDMに添付します。</p>
+          </li>
+        </ul>
+        <div class="meeting-share-dialog__actions">
+          <button id="meeting-share-download" class="secondary-button" type="button">PDFを保存</button>
+          <button id="meeting-share-native" class="secondary-button" type="button" hidden>PDFをアプリで共有</button>
+        </div>
+        <p id="meeting-share-status" class="privacy-copy" role="status"></p>
+      </dialog>
       <section id="rename-meeting-history-dialog" class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-dialog-title" hidden>
         <div class="confirm-dialog__backdrop" aria-hidden="true"></div>
         <form id="rename-meeting-history-form" class="confirm-dialog__body">
