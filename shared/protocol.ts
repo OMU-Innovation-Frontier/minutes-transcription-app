@@ -1,3 +1,5 @@
+import { isSpeakerLabel } from './sonix.js';
+
 export const PROTOCOL_VERSION = 1;
 export const PCM_AUDIO_FRAME_VERSION = 2;
 export const MAX_AUDIO_CHUNK_BYTES = 1_000_000;
@@ -5,7 +7,7 @@ export const MAX_CONTROL_MESSAGE_BYTES = 16_384;
 export const MAX_SESSION_ID_BYTES = 128;
 
 export type WireLanguage = 'ja' | 'en';
-export type ServerProviderRequest = 'server-default' | 'local-whisper' | 'groq-whisper';
+export type ServerProviderRequest = 'server-default' | 'local-whisper' | 'groq-whisper' | 'sonix' | 'soniox';
 export const DEFAULT_GROQ_WHISPER_MODEL = 'whisper-large-v3-turbo';
 export type GroqWhisperModel = typeof DEFAULT_GROQ_WHISPER_MODEL | 'whisper-large-v3';
 
@@ -129,6 +131,7 @@ export type ServerMessage =
       text: string;
       isFinal: boolean;
       language: WireLanguage;
+      speakerLabel?: string;
       confidence?: number;
       startTime: number;
       endTime?: number;
@@ -333,6 +336,7 @@ export function parseServerMessage(text: string): ServerMessage {
       || typeof value.revision !== 'number'
       || !Number.isSafeInteger(value.revision)
       || typeof value.text !== 'string'
+      || (value.speakerLabel !== undefined && !isSpeakerLabel(value.speakerLabel))
       || typeof value.isFinal !== 'boolean'
       || (value.language !== 'ja' && value.language !== 'en')
       || typeof value.startTime !== 'number'
@@ -349,6 +353,7 @@ export function parseServerMessage(text: string): ServerMessage {
       text: value.text,
       isFinal: value.isFinal,
       language: value.language,
+      ...(value.speakerLabel === undefined ? {} : { speakerLabel: value.speakerLabel }),
       confidence: value.confidence,
       startTime: value.startTime,
       endTime: value.endTime,
@@ -366,7 +371,7 @@ export function parseServerMessage(text: string): ServerMessage {
 
 function parseProviderRequest(value: unknown): ServerProviderRequest | undefined {
   if (value === undefined) return undefined;
-  if (value === 'server-default' || value === 'local-whisper' || value === 'groq-whisper') return value;
+  if (value === 'server-default' || value === 'local-whisper' || value === 'groq-whisper' || value === 'sonix' || value === 'soniox') return value;
   throw new ProtocolValidationError('invalid_provider', '音声認識プロバイダー指定が不正です。');
 }
 

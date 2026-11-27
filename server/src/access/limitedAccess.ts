@@ -27,6 +27,7 @@ export class LimitedAccess {
   }
   get cookieName(): string { return this.config.secure ? '__Host-minutes_access' : 'minutes_access'; }
   prepareQuotas(): Promise<void> {
+    if (this.config.dailyLimitsEnabled === false) return Promise.resolve();
     return this.quotaReady ??= this.quotas.initialize().catch((error: unknown) => {
       this.quotaReady = undefined;
       throw error;
@@ -87,6 +88,7 @@ export class LimitedAccess {
     if (resume || existing || this.recordings.size >= this.config.maxConnections) throw new AccessError(429, 'access_recording_limit', '録音の利用上限を確認してください。');
     // Insert before awaiting persistence, preventing simultaneous starts from exceeding the limit.
     this.recordings.set(key, { owner: session.id, endsAt: this.now() + this.config.recordingMs, bytes: 0 });
+    if (this.config.dailyLimitsEnabled === false) return;
     try {
       await this.prepareQuotas();
       await this.quotas.reserve('starts');
@@ -96,7 +98,7 @@ export class LimitedAccess {
     const lease = this.recordings.get(session.id + ':' + id);
     if (!lease || lease.endsAt <= this.now() || lease.bytes + bytes > this.config.recordingMs * 32) throw new AccessError(429, 'access_audio_limit', 'この録音の時間上限に達しました。');
     lease.bytes += bytes;
-    await this.quotas.reserve('audioBytes',bytes);
+    if (this.config.dailyLimitsEnabled !== false) await this.quotas.reserve('audioBytes',bytes);
   }
   detach(session: AccessSession, id: string): void {
     const lease = this.recordings.get(session.id + ':' + id);
@@ -111,8 +113,10 @@ export class LimitedAccess {
     if (this.pendingHttp >= this.config.maxHttpConcurrent) throw new AccessError(429, 'access_busy', '処理中です。しばらくお待ちください。');
     this.pendingHttp++;
     try {
-      await this.prepareQuotas();
-      await this.quotas.reserve(kind);
+      if (this.config.dailyLimitsEnabled !== false) {
+        await this.prepareQuotas();
+        await this.quotas.reserve(kind);
+      }
     }
     catch (error) { this.pendingHttp--; throw error; }
     let released = false;

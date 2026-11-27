@@ -10,6 +10,8 @@ import type { CorrectionServiceStatus } from '../shared/correction';
 import { AudioCapture } from './audio/audioCapture';
 import type { AudioChunkSink, CaptureState, MicrophoneError } from './audio/types';
 import { CorrectionCoordinator, CorrectionHttpClient } from './correction/correctionClient';
+import { MEETING_RECORDING_LIMIT_MS, SONIX_RECORDING_LIMIT_MS } from '../shared/sonix';
+import { serverHttpUrl } from './serverLocation';
 import { correctionStatusPresentation } from './correction/transcriptPresentation';
 import { initializeLocalEvaluationRecorder } from './localRecording/localEvaluationRecorder';
 import { IndexedDbMeetingHistoryRepository } from './history/indexedDbMeetingHistoryRepository';
@@ -60,15 +62,12 @@ import { presentLiveSummary } from './ui/liveSummaryView';
 import { followStateAfterScroll, shouldFollowTranscriptUpdate } from './ui/scrollFollow';
 import { createRawSegmentElement, createSentenceElement } from './ui/transcriptView';
 import {
-  buildExternalProcessingDisclosure,
   createInitialMeetingSetupDraft,
   createMeetingSettingsSnapshot,
   loadGroqWhisperModelPreference,
   saveGroqWhisperModelPreference,
-  validateMeetingSetupDraft,
   type MeetingExternalProcessingRequirements,
   type MeetingSettingsSnapshot,
-  type MeetingSetupDraft,
 } from './meetingSetup/meetingSetup';
 import { renderMeetingSettingsSummary } from './meetingSetup/meetingSettingsSummary';
 import {
@@ -97,20 +96,12 @@ const elements = {
   sidebarCollapseButton: requiredElement<HTMLButtonElement>('sidebar-collapse-button'),
   sidebarOpenButton: requiredElement<HTMLButtonElement>('sidebar-open-button'),
   homeTitle: requiredElement<HTMLElement>('home-title'),
-  homeDescription: requiredElement<HTMLElement>('home-description'),
   meetingSearchInput: requiredElement<HTMLInputElement>('meeting-search-input'),
   historySearchEmpty: requiredElement<HTMLElement>('history-search-empty'),
   summaryToggleButton: requiredElement<HTMLButtonElement>('summary-toggle-button'),
   summarySheetContent: requiredElement<HTMLElement>('summary-sheet-content'),
   setupSettings: requiredElement<HTMLElement>('meeting-setup-settings'),
-  setupError: requiredElement<HTMLElement>('setup-error'),
-  setupLanguage: requiredElement<HTMLSelectElement>('setup-language'),
   setupGroqModel: requiredElement<HTMLSelectElement>('setup-groq-model'),
-  setupCorrection: requiredElement<HTMLInputElement>('setup-correction'),
-  setupLiveSummary: requiredElement<HTMLInputElement>('setup-live-summary'),
-  setupExternalConfirmation: requiredElement<HTMLElement>('setup-external-confirmation'),
-  setupExternalDescription: requiredElement<HTMLElement>('setup-external-description'),
-  setupExternalAck: requiredElement<HTMLInputElement>('setup-external-ack'),
   resumeMeetingButton: requiredElement<HTMLButtonElement>('resume-meeting-button'),
   homeActiveMeeting: requiredElement<HTMLElement>('home-active-meeting'),
   homeHistoryEmpty: requiredElement<HTMLElement>('home-history-empty'),
@@ -187,6 +178,7 @@ const elements = {
   transcriptView: requiredElement<HTMLSelectElement>('transcript-view'),
   transcriptScroll: requiredElement<HTMLElement>('transcript-scroll'),
   finalTranscript: requiredElement<HTMLOListElement>('final-transcript'),
+  interimLabel: requiredElement<HTMLElement>('interim-label'),
   interimTranscript: requiredElement<HTMLElement>('interim-transcript'),
   interimText: requiredElement<HTMLElement>('interim-text'),
   transcriptEmpty: requiredElement<HTMLElement>('transcript-empty'),
@@ -226,6 +218,12 @@ let transcriptionState: TranscriptionState = 'disconnected';
 let appState: AppViewState = createInitialAppViewState();
 let chunksReceived = 0;
 let elapsedTimer: number | undefined;
+let sonixRecordingTimer: number | undefined;
+let sonixRecordingLimitMs: number | undefined;
+let sonioxRecordingLimitMs: number | undefined;
+let sonixProcessing = false;
+let sonixProcessingFailed = false;
+let sonioxPreview = '';
 let sessionTransition = false;
 let currentSessionId = '';
 let currentMeetingId = '';
@@ -299,9 +297,6 @@ const meetingShareDialog = initializeMeetingShareDialog({
 });
 
 elements.setupGroqModel.value = loadGroqWhisperModelPreference() ?? '';
-elements.setupLanguage.value = meetingSetupDraft.language;
-elements.setupCorrection.checked = meetingSetupDraft.correctionEnabled;
-elements.setupLiveSummary.checked = meetingSetupDraft.liveSummaryEnabled;
 
 const transcriptionSink: AudioChunkSink = {
   async handle(chunk): Promise<void> {
@@ -321,7 +316,7 @@ const capture = new AudioCapture(transcriptionSink, {
 elements.newMeetingButton.addEventListener('click', beginMeeting);
 elements.workspaceStartButton.addEventListener('click', () => {
   if (!appState.meetingStarted || appState.meetingEnded) {
-    beginMeeting();
+    void beginMeeting();
     return;
   }
   clearPersistedMeetingDetail();
@@ -336,14 +331,9 @@ elements.summaryToggleButton.addEventListener('click', () => {
 });
 elements.setupGroqModel.addEventListener('change', () => {
   renderMeetingSetup();
-  saveGroqWhisperModelPreference(meetingSetupDraft.groqModel);
+  if (meetingSetupDraft.transcriptionProvider === 'groq-whisper') saveGroqWhisperModelPreference(meetingSetupDraft.groqModel);
+  renderHomeState();
 });
-for (const input of [elements.setupLanguage, elements.setupCorrection, elements.setupLiveSummary, elements.setupExternalAck]) {
-  input.addEventListener('input', () => {
-    if (input === elements.setupCorrection || input === elements.setupLiveSummary) elements.setupExternalAck.checked = false;
-    renderMeetingSetup();
-  });
-}
 elements.historyToggle.addEventListener('click', () => {
   setHistoryExpanded(elements.historyToggle.getAttribute('aria-expanded') !== 'true');
 });
@@ -380,6 +370,7 @@ elements.confirmDeleteMeetingHistoryButton.addEventListener('click', () => {
 });
 elements.retryDeleteMeetingHistoryButton.addEventListener('click', retryDeleteMeetingHistory);
 elements.homeSettingsButton.addEventListener('click', () => openSettings());
+requiredElement<HTMLButtonElement>('detail-settings-button').addEventListener('click', openSettings);
 elements.settingsCloseButton.addEventListener('click', closeSettings);
 elements.startButton.addEventListener('click', () => {
   if (captureState === 'recording') void pauseSession();
@@ -396,6 +387,7 @@ elements.finalizeSentenceButton.addEventListener('click', () => {
   if (transcriptStore.finalizeSentenceManually()) handleTranscriptChange();
 });
 elements.clearTranscriptButton.addEventListener('click', () => {
+  sonioxPreview = '';
   transcriptStore.clear();
   renderTranscript();
 });
@@ -407,6 +399,7 @@ window.addEventListener('pagehide', () => {
   persistActiveMeeting();
   pageUnloading = true;
   window.clearInterval(elapsedTimer);
+  window.clearTimeout(sonixRecordingTimer);
   meetingHistoryListController.dispose();
   meetingHistoryDetailController.dispose();
   meetingHistoryDeleteController.dispose();
@@ -420,16 +413,10 @@ window.addEventListener('pagehide', () => {
 });
 
 function beginMeeting(): void {
-  if (sessionTransition || finalSummaryController.retryInProgress || (appState.meetingStarted && !appState.meetingEnded)) return;
+  if (pageUnloading || sessionTransition || finalSummaryController.retryInProgress || (appState.meetingStarted && !appState.meetingEnded)) return;
   const requirements = correctionExternalProcessingRequirements();
-  const consent = meetingSetupDraft.externalProcessingAcknowledged;
   const settings = createMeetingSettingsSnapshot({
     ...meetingSetupDraft,
-    correctionEnabled: meetingSetupDraft.correctionEnabled && requirements.correctionStatusKnown
-      && (!requirements.correctionExternalTransmission || consent),
-    liveSummaryEnabled: meetingSetupDraft.liveSummaryEnabled && Boolean(requirements.summaryEnabled)
-      && (!requirements.summaryExternalTransmission || consent),
-    // Both start buttons disclose that starting a new recording sends audio to Groq.
     externalProcessingAcknowledged: true,
   }, new Date().toISOString(), requirements);
   closeSettings();
@@ -438,7 +425,7 @@ function beginMeeting(): void {
   resetMeetingData();
   setSummaryExpanded(false);
   meetingSettingsSnapshot = settings;
-  meetingSummaryExternalAllowed = Boolean(settings.liveSummaryEnabled && setupSummaryStatus?.apiUsed && consent);
+  meetingSummaryExternalAllowed = Boolean(settings.liveSummaryEnabled && setupSummaryStatus?.apiUsed);
   currentMeetingId = createSessionId();
   meetingStartedAt = null;
   meetingEndedAt = null;
@@ -451,24 +438,16 @@ function beginMeeting(): void {
 }
 
 function renderMeetingSetup(): void {
+  const selected = elements.setupGroqModel.value;
+  const transcriptionProvider = selected === 'soniox' && sonioxRecordingLimitMs ? 'soniox'
+    : selected === 'sonix' && sonixRecordingLimitMs ? 'sonix' : 'groq-whisper';
   meetingSetupDraft = {
     ...meetingSetupDraft,
-    language: elements.setupLanguage.value as MeetingSetupDraft['language'],
-    groqModel: isGroqWhisperModel(elements.setupGroqModel.value) ? elements.setupGroqModel.value : undefined,
-    correctionEnabled: elements.setupCorrection.checked,
-    liveSummaryEnabled: elements.setupLiveSummary.checked,
-    externalProcessingAcknowledged: elements.setupExternalAck.checked,
+    transcriptionProvider,
+    groqModel: isGroqWhisperModel(selected) ? selected : undefined,
+    correctionEnabled: Boolean(correctionServiceStatus?.enabled),
+    liveSummaryEnabled: Boolean(setupSummaryStatus?.enabled),
   };
-  const requirements = correctionExternalProcessingRequirements();
-  const disclosure = buildExternalProcessingDisclosure(meetingSetupDraft, requirements, false);
-  const error = validateMeetingSetupDraft({
-    ...meetingSetupDraft,
-    externalProcessingAcknowledged: !disclosure || meetingSetupDraft.externalProcessingAcknowledged,
-  }, requirements);
-  elements.setupExternalDescription.textContent = disclosure;
-  elements.setupExternalConfirmation.hidden = !disclosure;
-  elements.setupError.textContent = error ?? '';
-  elements.setupError.hidden = !error;
 }
 
 function refreshSetupSummaryStatus(): Promise<void> {
@@ -479,7 +458,10 @@ function refreshSetupSummaryStatus(): Promise<void> {
     setupSummaryStatus = null;
   }).finally(() => {
     summaryStatusRequest = null;
-    if (!pageUnloading) renderMeetingSetup();
+    if (!pageUnloading) {
+      renderMeetingSetup();
+      renderHomeState();
+    }
   });
   return summaryStatusRequest;
 }
@@ -490,6 +472,8 @@ function resetMeetingData(): void {
   summaryCoordinator = null;
   for (const coordinator of correctionCoordinators.splice(0)) coordinator.dispose();
   correctionCoordinator = null;
+  sonioxPreview = '';
+  sonixProcessingFailed = false;
   transcriptStore.clear();
   currentSessionId = '';
   latestLiveSummary = null;
@@ -513,6 +497,8 @@ function resetMeetingData(): void {
 async function startSession(): Promise<void> {
   if (sessionTransition || captureState !== 'idle' || appState.meetingEnded) return;
   if (!appState.meetingStarted || !meetingSettingsSnapshot) return;
+  if (hasSpeakerLabels(meetingSettingsSnapshot.transcriptionProvider) && meetingHasRecorded) return;
+  if (remainingMeetingRecordingMs() <= 0) return;
   meetingStartedAt ??= Date.now();
   startElapsedTimer();
   setAppState({ ...appState, view: 'meeting' });
@@ -526,18 +512,8 @@ async function startSession(): Promise<void> {
   elements.reconnectAttempt.textContent = '—';
 
   currentSessionId = createSessionId();
+  sonioxPreview = '';
   transcriptStore.startSession(currentSessionId);
-  if (meetingSettingsSnapshot.correctionEnabled) {
-    correctionCoordinator = createCorrectionCoordinator(currentSessionId);
-    correctionCoordinators.push(correctionCoordinator);
-    correctionCoordinator.add(transcriptStore.snapshot().completedSentences);
-    void correctionCoordinator.initialize();
-  }
-  if (!summaryCoordinator && meetingSettingsSnapshot.liveSummaryEnabled) {
-    summaryCoordinator = createSummaryCoordinator(currentMeetingId || currentSessionId);
-    void summaryCoordinator.initialize();
-  }
-
   provider = createSpeechToTextProvider(meetingSettingsSnapshot.transcriptionProvider);
   renderProviderDetails();
   renderControls();
@@ -548,6 +524,26 @@ async function startSession(): Promise<void> {
     renderError(error);
     return;
   }
+
+  const recordingSessionId = currentSessionId;
+  void initialMeetingFeatureStatus.then(() => {
+    if (pageUnloading || recordingSessionId !== currentSessionId || captureState !== 'recording' || !meetingSettingsSnapshot || appState.meetingEnded) return;
+    const correctionEnabled = Boolean(correctionServiceStatus?.enabled);
+    const liveSummaryEnabled = Boolean(setupSummaryStatus?.enabled);
+    meetingSettingsSnapshot = Object.freeze({ ...meetingSettingsSnapshot, correctionEnabled, liveSummaryEnabled });
+    meetingSummaryExternalAllowed = Boolean(liveSummaryEnabled && setupSummaryStatus?.apiUsed);
+    if (correctionEnabled) {
+      correctionCoordinator = createCorrectionCoordinator(recordingSessionId);
+      correctionCoordinators.push(correctionCoordinator);
+      correctionCoordinator.add(transcriptStore.snapshot().completedSentences);
+      void correctionCoordinator.initialize();
+    }
+    if (!summaryCoordinator && liveSummaryEnabled) {
+      summaryCoordinator = createSummaryCoordinator(currentMeetingId || recordingSessionId);
+      void summaryCoordinator.initialize();
+    }
+    renderManualSummaryControls();
+  });
 
   try {
     await provider.start({
@@ -564,6 +560,12 @@ async function startSession(): Promise<void> {
           renderConnectionNote();
         },
         onTranscript: (update) => {
+          if (pageUnloading || update.sessionId !== currentSessionId) return;
+          if (provider.id === 'soniox' && !update.isFinal) {
+            sonioxPreview = update.text;
+            renderTranscript();
+            return;
+          }
           if (transcriptStore.apply(update)) handleTranscriptChange();
         },
         onError: handleProviderError,
@@ -583,6 +585,13 @@ async function startSession(): Promise<void> {
       },
     });
     meetingHasRecorded = true;
+    const providerLimit = provider.id === 'soniox' ? sonioxRecordingLimitMs
+      : provider.id === 'sonix' ? sonixRecordingLimitMs ?? SONIX_RECORDING_LIMIT_MS : undefined;
+    sonixRecordingTimer = window.setTimeout(() => {
+      void pauseSession().then((stopped) => {
+        if (stopped && remainingMeetingRecordingMs() <= 0) renderError('この会議の録音時間は2時間に達しました。');
+      });
+    }, Math.min(remainingMeetingRecordingMs(), providerLimit ?? MEETING_RECORDING_LIMIT_MS));
     persistActiveMeeting();
   } catch (error) {
     await stopFailedRecording();
@@ -593,9 +602,13 @@ async function startSession(): Promise<void> {
   }
 }
 
-async function pauseSession(): Promise<void> {
-  if (sessionTransition || captureState === 'idle') return;
+async function pauseSession(): Promise<boolean> {
+  if (sessionTransition || captureState === 'idle') return false;
+  window.clearTimeout(sonixRecordingTimer);
   sessionTransition = true;
+  sonixProcessing = hasSpeakerLabels(provider.id);
+  sonixProcessingFailed = false;
+  renderConnectionNote();
   renderControls();
   let firstError: unknown;
   try {
@@ -607,6 +620,11 @@ async function pauseSession(): Promise<void> {
     await provider.stop();
   } catch (error) {
     firstError ??= error;
+  } finally {
+    sonioxPreview = '';
+    if (sonixProcessing && firstError) sonixProcessingFailed = true;
+    sonixProcessing = false;
+    renderConnectionNote();
   }
   transcriptStore.finalizeRecording();
   handleTranscriptChange();
@@ -614,6 +632,7 @@ async function pauseSession(): Promise<void> {
   if (firstError) renderError(firstError);
   sessionTransition = false;
   renderControls();
+  return !sonixProcessingFailed;
 }
 
 async function finishMeeting(withSummary: boolean): Promise<void> {
@@ -622,7 +641,7 @@ async function finishMeeting(withSummary: boolean): Promise<void> {
   if (withSummary && !approvedSummary?.enabled) return;
   const editedTitle = elements.endMeetingTitleInput.value.trim();
   closeEndMeetingDialog();
-  if (captureState !== 'idle') await pauseSession();
+  if (captureState !== 'idle' && !await pauseSession()) return;
   meetingTitle = editedTitle && editedTitle !== meetingTitle ? editedTitle : suggestMeetingTitle();
   sessionTransition = true;
   renderControls();
@@ -789,7 +808,7 @@ function renderCaptureState(state: CaptureState): void {
   elements.recordingStatus.classList.toggle('meeting-state--recording', state === 'recording');
   elements.recordingStatus.classList.toggle('meeting-state--error', state === 'error');
   const labels: Record<CaptureState, string> = {
-    idle: meetingHasRecorded ? '一時停止中' : '会議開始前',
+    idle: meetingHasRecorded ? hasSpeakerLabels(provider.id) ? '録音済み' : '一時停止中' : '会議開始前',
     starting: 'マイク権限を確認中',
     recording: '録音中',
     stopping: '一時停止しています',
@@ -817,6 +836,11 @@ function renderTranscriptionState(state: TranscriptionState): void {
 }
 
 function renderConnectionNote(): void {
+  if (sonixProcessing) {
+    elements.connectionNote.hidden = false;
+    elements.connectionNote.textContent = provider.id === 'soniox' ? 'Sonioxで最後の発言を確定しています。' : 'Sonixで文字起こしと話者分離を処理中です。';
+    return;
+  }
   if (captureState !== 'recording') {
     elements.connectionNote.hidden = true;
     return;
@@ -828,7 +852,7 @@ function renderConnectionNote(): void {
     replaying: '接続中に保持した音声を順番に送っています。',
     degraded: '接続が不安定です。録音は続いています。',
   };
-  const message = messages[transcriptionState];
+  const message = messages[transcriptionState] ?? (provider.id === 'sonix' ? '発言と話者ラベルは録音終了後に表示されます。' : undefined);
   elements.connectionNote.hidden = !message;
   elements.connectionNote.textContent = message ?? '';
 }
@@ -838,10 +862,12 @@ function renderControls(): void {
   renderManualSummaryControls();
   const active = captureState !== 'idle';
   elements.startButton.disabled = sessionTransition || appState.meetingEnded
+    || (captureState === 'idle' && remainingMeetingRecordingMs() <= 0)
+    || (hasSpeakerLabels(provider.id) && meetingHasRecorded && captureState === 'idle')
     || (captureState !== 'idle' && captureState !== 'recording');
   const recording = captureState === 'recording';
   elements.startButton.dataset.mode = recording ? 'stop' : 'start';
-  const label = recording ? '録音を一時停止' : meetingHasRecorded ? '録音を再開' : '録音を開始';
+  const label = recording ? hasSpeakerLabels(provider.id) ? '録音を終了' : '録音を一時停止' : meetingHasRecorded ? '録音を再開' : '録音を開始';
   elements.startButton.setAttribute('aria-label', label);
   elements.startButton.title = label;
   elements.endMeetingButton.disabled = sessionTransition || appState.meetingEnded;
@@ -850,6 +876,14 @@ function renderControls(): void {
   elements.reconnectButton.disabled = !active || !provider.reconnect
     || !(transcriptionState === 'reconnecting' || transcriptionState === 'degraded' || transcriptionState === 'error');
   elements.finalizeSentenceButton.disabled = !active;
+}
+
+function hasSpeakerLabels(id: string): boolean {
+  return id === 'sonix' || id === 'soniox';
+}
+
+function remainingMeetingRecordingMs(): number {
+  return Math.max(0, MEETING_RECORDING_LIMIT_MS - (meetingStartedAt === null ? 0 : Date.now() - meetingStartedAt));
 }
 
 function renderProviderDetails(): void {
@@ -862,7 +896,8 @@ function renderTranscript(): void {
   const snapshot = transcriptStore.snapshot();
   const showRaw = elements.transcriptView.value === 'raw';
   const nextCount = snapshot.completedSentences.length;
-  const interimChanged = snapshot.interimDisplayText !== renderedInterimText;
+  const interimText = sonioxPreview || snapshot.interimDisplayText;
+  const interimChanged = interimText !== renderedInterimText;
   const shouldFollow = shouldFollowTranscriptUpdate(autoFollowTranscript, renderedSentenceCount, nextCount, interimChanged);
   const previousScrollTop = elements.transcriptScroll.scrollTop;
   const enteringSentenceId = nextCount > renderedSentenceCount ? snapshot.completedSentences.at(-1)?.id : undefined;
@@ -878,17 +913,18 @@ function renderTranscript(): void {
   if (meetingDetailSource?.kind !== 'persisted') {
     renderCurrentDetailTranscript(snapshot.completedSentences);
   }
-  elements.interimTranscript.hidden = !snapshot.interimDisplayText;
-  elements.interimText.textContent = snapshot.interimDisplayText;
-  elements.transcriptEmpty.hidden = mainItems.length > 0 || Boolean(snapshot.interimDisplayText);
-  elements.clearTranscriptButton.disabled = mainItems.length === 0 && !snapshot.interimDisplayText;
+  elements.interimTranscript.hidden = !interimText;
+  elements.interimLabel.textContent = sonioxPreview ? '認識中（話者ラベルは暫定）' : '聞き取り中';
+  elements.interimText.textContent = interimText;
+  elements.transcriptEmpty.hidden = mainItems.length > 0 || Boolean(interimText);
+  elements.clearTranscriptButton.disabled = mainItems.length === 0 && !interimText;
 
   if (enteringSentenceId) {
     const latest = snapshot.completedSentences.at(-1);
     if (latest) elements.latestAnnouncement.textContent = `新しい発言: ${latest.correction?.status === 'completed' ? latest.correction.correctedText : latest.rawText}`;
   }
   renderedSentenceCount = nextCount;
-  renderedInterimText = snapshot.interimDisplayText;
+  renderedInterimText = interimText;
   elements.latestTranscriptButton.hidden = autoFollowTranscript;
 
   window.requestAnimationFrame(() => {
@@ -933,6 +969,7 @@ function renderCorrectionStatus(status: CorrectionServiceStatus): void {
   elements.correctionStatus.textContent = presentation.statusText;
   elements.correctionPrivacy.textContent = presentation.privacyText;
   renderMeetingSetup();
+  renderHomeState();
 }
 
 function correctionExternalProcessingRequirements(): MeetingExternalProcessingRequirements {
@@ -1087,7 +1124,6 @@ function renderHomeState(): void {
   elements.homeActiveMeeting.hidden = !active;
   elements.newMeetingButton.hidden = active;
   elements.homeTitle.textContent = active ? '会議を続ける' : '新しい議事録';
-  elements.homeDescription.textContent = active ? '進行中の文字起こしに戻ります。' : '録音した音声を文字起こしのためGroqに送信します。';
   elements.homeSettingsButton.hidden = appState.view !== 'home';
   const startLabel = active ? '進行中の会議へ戻る' : '新規会議';
   elements.workspaceStartButton.setAttribute('aria-label', startLabel);
@@ -1431,7 +1467,7 @@ function setHistoryExpanded(expanded: boolean): void {
 }
 
 function openSettings(): void {
-  if (appState.view !== 'home') return;
+  if (appState.view !== 'home' && appState.view !== 'meeting-detail') return;
   if (elements.settingsPanel.hidden) settingsTrigger = document.activeElement as HTMLElement | null;
   const active = appState.meetingStarted && !appState.meetingEnded;
   elements.setupSettings.hidden = active;
@@ -1499,12 +1535,14 @@ function handleCaptureError(error: MicrophoneError): void {
 }
 
 function handleProviderError(error: TranscriptionError): void {
+  if (sonixProcessing) sonixProcessingFailed = true;
   renderError(error);
   renderConnectionNote();
   if (!sessionTransition && captureState === 'recording') void stopFailedRecording();
 }
 
 async function stopFailedRecording(): Promise<void> {
+  window.clearTimeout(sonixRecordingTimer);
   sessionTransition = true;
   renderControls();
   try {
@@ -1653,6 +1691,7 @@ function recoverActiveMeeting(): void {
       sessionId: draft.meetingId,
       rawSegmentIds: utterance.sourceSegmentIds,
       rawText: utterance.rawText,
+      ...(utterance.speakerLabel ? { speakerLabel: utterance.speakerLabel } : {}),
       displayText: utterance.correctedText ?? utterance.rawText,
       revision: utterance.revision,
       language: utterance.language,
@@ -1676,6 +1715,20 @@ function recoverActiveMeeting(): void {
 recoverActiveMeeting();
 const disposeWorkspacePresentation = initializeWorkspacePresentation();
 renderMeetingSetup();
+void fetch(new URL('/api/transcription/status', serverHttpUrl()).href).then(async (response) => {
+  if (!response.ok || pageUnloading) return;
+  const status: unknown = await response.json();
+  if (!status || typeof status !== 'object' || pageUnloading) return;
+  function enableMethod(method: 'sonix' | 'soniox', value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
+    const option = elements.setupGroqModel.querySelector<HTMLOptionElement>(`option[value="${method}"]`);
+    if (option) { option.hidden = false; option.disabled = false; }
+    return Math.min(method === 'soniox' ? MEETING_RECORDING_LIMIT_MS : SONIX_RECORDING_LIMIT_MS, value);
+  }
+  sonixRecordingLimitMs = enableMethod('sonix', 'sonixRecordingLimitMs' in status ? status.sonixRecordingLimitMs : null);
+  sonioxRecordingLimitMs = enableMethod('soniox', 'sonioxRecordingLimitMs' in status ? status.sonioxRecordingLimitMs : null);
+  renderMeetingSetup();
+}).catch(() => undefined);
 if (import.meta.env.PROD) {
   void fetch('/auth/session').then(async response => {
     if (!response.ok || pageUnloading) return;
@@ -1697,4 +1750,7 @@ renderTranscriptionState('disconnected');
 resetSummaryView();
 renderTranscript();
 renderUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0, requestCount: 0, pricingConfigured: true });
-void correctionClient.status().then(renderCorrectionStatus).catch((error) => renderCorrectionWarning(getErrorMessage(error)));
+const initialMeetingFeatureStatus = Promise.allSettled([
+  correctionClient.status().then(renderCorrectionStatus).catch((error) => renderCorrectionWarning(getErrorMessage(error))),
+  refreshSetupSummaryStatus(),
+]);

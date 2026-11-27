@@ -1,3 +1,4 @@
+import { MEETING_RECORDING_LIMIT_MS, SONIX_RECORDING_LIMIT_MS } from '../../shared/sonix.js';
 import { SummaryProviderError } from './summary/summaryProviderCommon.js';
 import { loadAccessConfig, type AccessConfig } from './access/config.js';
 import { LimitedAccess, type AccessSession } from './access/limitedAccess.js';
@@ -43,6 +44,8 @@ export function createTranscriptionApplication(options: TranscriptionApplication
   const accessConfig = options.accessConfig ?? loadAccessConfig();
   if (!accessConfig.enabled && !['127.0.0.1', 'localhost', '::1'].includes(config.host)) throw new Error('外部公開には限定公開認証の有効化が必要です。');
   if (accessConfig.enabled && (config.localSttEnabled || config.localSttDebugAudio)) throw new Error('限定公開ではLocal Whisperと音声デバッグ保存を無効にしてください。');
+  const sonixEnabled = config.externalEnabled && Boolean(config.sonixApiKey);
+  const sonioxEnabled = config.externalEnabled && Boolean(config.sonioxApiKey);
   const access = accessConfig.enabled ? new LimitedAccess(accessConfig) : null;
   const privateRegistries = new Map<string, TranscriptionSessionRegistry>();
   const socketSessions = new Map<RecordingSocket, AccessSession>();
@@ -64,7 +67,11 @@ export function createTranscriptionApplication(options: TranscriptionApplication
     if (access) securityHeaders(response);
     let principal: AccessSession | null = null;
     if (access) {
-      if (request.method === 'GET' && route.pathname === '/health') { sendJson(response, 200, { status: 'ok' }); return; }
+      if (request.method === 'GET' && route.pathname === '/health') {
+        response.setHeader('x-minutes-daily-limits', access.config.dailyLimitsEnabled === false ? 'disabled' : 'enabled');
+        response.setHeader('x-minutes-recording-limit-seconds', String(access.config.recordingMs / 1_000));
+        sendJson(response, 200, { status: 'ok' }); return;
+      }
       if (request.method === 'GET' && route.pathname === '/auth/login') { loginPage(response); return; }
       if (request.method === 'POST' && route.pathname === '/auth/login') { await handleLogin(request, response, access, httpOptions.loginAddress?.(request)); return; }
       principal = access.authenticate(request);
@@ -99,6 +106,15 @@ export function createTranscriptionApplication(options: TranscriptionApplication
       return;
     }
     const url = new URL(request.url ?? '/', 'http://localhost');
+    if (request.method === 'GET' && url.pathname === '/api/transcription/status') {
+      response.setHeader('cache-control', 'no-store');
+      const sonixRecordingLimitMs = access ? Math.min(SONIX_RECORDING_LIMIT_MS, access.config.recordingMs - 5_000) : SONIX_RECORDING_LIMIT_MS;
+      sendJson(response, 200, {
+        sonixRecordingLimitMs: sonixEnabled ? sonixRecordingLimitMs : null,
+        sonioxRecordingLimitMs: sonioxEnabled ? Math.min(MEETING_RECORDING_LIMIT_MS, access?.config.recordingMs ?? MEETING_RECORDING_LIMIT_MS) : null,
+      });
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/api/correction/status') {
       sendJson(response, 200, correctionService.status());
       return;
@@ -184,6 +200,7 @@ export function createTranscriptionApplication(options: TranscriptionApplication
       privateRegistries.set(principal.id, registry);
     }
     let recordingId: string | null = null;
+    let finalizesAfterRecording = false;
     let receivedMessages = 0;
     let recordingTimer: ReturnType<typeof setTimeout> | undefined;
     const sessionTimer = access && principal ? setTimeout(() => websocket.close(1008, 'Access expired'), Math.max(1, principal.expiresAt - Date.now())) : undefined;
@@ -210,18 +227,23 @@ export function createTranscriptionApplication(options: TranscriptionApplication
       if (access) receivedMessages++;
       const isBinary = typeof data !== 'string';
       messageQueue = messageQueue.then(async () => {
+        const control = access && typeof data === 'string' ? parseClientControlMessage(data) : undefined;
         if (access && principal) {
           if (!access.valid(principal) || !websocket.isOpen()) throw new AccessError(401, 'access_required', '合言葉を入力し直してください。');
           if (isBinary) {
             const frame = decodeAudioFrame(data);
             if (!frame.metadata || frame.metadata.sampleRate !== 16000 || frame.metadata.channels !== 1 || frame.sessionId !== recordingId) throw new AccessError(400, 'access_audio_format', '録音形式を確認してください。');
             await access.reserveAudio(principal, frame.sessionId, frame.audio.byteLength);
-          } else {
-            const control = parseClientControlMessage(data);
+          } else if (control) {
             if (control.type === 'start' || control.type === 'resume') {
-              if (recordingId || control.provider !== 'groq-whisper') throw new AccessError(400, 'access_provider', '限定公開ではGroq Whisperを選んでください。');
+              const enabledProvider = control.provider === 'groq-whisper' || (control.provider === 'sonix' && sonixEnabled)
+                || (control.provider === 'soniox' && sonioxEnabled);
+              if (recordingId || !enabledProvider) {
+                throw new AccessError(400, 'access_provider', '利用可能な文字起こし方法を選んでください。');
+              }
               await access.claimRecording(principal, control.sessionId, control.type === 'resume');
               recordingId = control.sessionId;
+              finalizesAfterRecording = control.provider === 'sonix' || control.provider === 'soniox';
               recordingTimer = setTimeout(() => websocket.close(1008, 'Recording time limit'), access.remainingRecordingMs(principal, control.sessionId));
             }
           }
@@ -229,16 +251,18 @@ export function createTranscriptionApplication(options: TranscriptionApplication
         }
         if (isBinary) await session.handleBinary(data);
         else {
+          const ending = control && (control.type === 'stop' || control.type === 'cancel') && control.sessionId === recordingId;
+          if (ending && finalizesAfterRecording) clearTimeout(recordingTimer);
           await session.handleText(data);
-          if (access && principal && recordingId) {
-            const control = parseClientControlMessage(data);
-            if ((control.type === 'stop' || control.type === 'cancel') && control.sessionId === recordingId) {
-              access.releaseRecording(principal, recordingId); recordingId = null; clearTimeout(recordingTimer);
-            }
+          if (ending && access && principal && recordingId) {
+            access.releaseRecording(principal, recordingId); recordingId = null; clearTimeout(recordingTimer);
           }
         }
-      }).catch(() => {
-        if (access) { send({ type: 'error', code: 'access_limit', message: '録音の利用上限または接続状態を確認してください。', retryable: false }); websocket.close(1008, 'Access limit'); }
+      }).catch((error: unknown) => {
+        if (!access) return;
+        const message = error instanceof AccessError ? error.message : '録音の利用上限または接続状態を確認してください。';
+        send({ type: 'error', code: 'access_limit', message, retryable: false });
+        websocket.close(1008, 'Access limit');
       }).finally(() => { if (access) receivedMessages--; });
       return messageQueue;
     }

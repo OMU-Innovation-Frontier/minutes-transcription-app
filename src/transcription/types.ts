@@ -28,6 +28,7 @@ export interface TranscriptUpdate {
   text: string;
   isFinal: boolean;
   language: TranscriptionLanguage;
+  speakerLabel?: string;
   provider: string;
   startTime: number;
   endTime?: number;
@@ -61,6 +62,7 @@ export interface RawTranscriptSegment {
   startTime: number;
   endTime?: number;
   language: TranscriptLanguage;
+  speakerLabel?: string;
   provider: string;
   revision: number;
 }
@@ -85,6 +87,7 @@ export interface CompletedSentence {
   startTime: number;
   endTime: number;
   completionReason: SentenceCompletionReason;
+  speakerLabel?: string;
   correction?: TranscriptCorrection;
 }
 
@@ -135,6 +138,8 @@ export const SPEECH_TO_TEXT_PROVIDER_KINDS = [
   'websocket',
   'local-whisper',
   'groq-whisper',
+  'sonix',
+  'soniox',
 ] as const;
 
 export type SpeechToTextProviderKind = typeof SPEECH_TO_TEXT_PROVIDER_KINDS[number];

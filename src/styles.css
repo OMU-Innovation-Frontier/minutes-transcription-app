@@ -286,7 +286,7 @@ button { color: inherit; }
 .utterance__state--cancelled, .utterance__state--fallback { color: var(--muted); background: var(--surface-soft); }
 .interim-transcript { margin-top: 0.75rem; color: #6b7280; font-size: 0.95rem; line-height: 1.55; }
 .interim-transcript span { display: block; margin-bottom: 0.5rem; color: var(--soft); font-size: 0.72rem; font-weight: 750; }
-.interim-transcript p { margin: 0; }
+.interim-transcript p { margin: 0; white-space: pre-wrap; }
 .latest-button {
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--line);

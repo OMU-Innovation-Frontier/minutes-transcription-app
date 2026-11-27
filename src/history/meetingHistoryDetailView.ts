@@ -140,6 +140,12 @@ function createUtterance(utterance: PersistedUtterance, index: number): HTMLLIEl
   const text = document.createElement('p');
   text.className = 'utterance__text';
   text.textContent = utterance.correctedText ?? utterance.rawText;
+  if (utterance.speakerLabel) {
+    const label = document.createElement('small');
+    label.className = 'utterance__meta';
+    label.textContent = utterance.speakerLabel;
+    item.append(label);
+  }
   item.append(text);
 
   if (utterance.correctedText !== null) {

@@ -167,6 +167,28 @@ describe('limited-access server boundaries', () => {
     expect((await error).code).toBe('access_limit'); await closed;
     expect(h.audio).not.toHaveBeenCalled();
   });
+  it('supports repeated recordings without daily quotas and still enforces the recording cap', async () => {
+    const h = await start({ dailyLimitsEnabled: false, dailyStarts: 1, dailyAudioSeconds: 1, recordingMs: 10_000 });
+    const session = await cookie(h.base);
+    for (const id of ['synthetic-first', 'synthetic-second']) {
+      const socket = await connect(h.ws, session);
+      const ready = message(socket); control(socket, 'start', id);
+      expect((await ready).type).toBe('ready');
+      const ack = message(socket);
+      socket.send(encodeAudioFrame(id, 0, new ArrayBuffer(32_002), { capturedAt: 0, sampleRate: 16000, channels: 1, encoding: 'pcm_s16le', frameCount: 16001 }));
+      expect((await ack).type).toBe('audio_ack');
+      const result = message(socket);
+      socket.send(JSON.stringify({ type: 'stop', sessionId: id }));
+      expect((await result).type).toBe('stopped');
+      const closed = once(socket, 'close'); socket.close(); await closed;
+    }
+    const socket = await connect(h.ws, session);
+    const ready = message(socket); control(socket, 'start', 'synthetic-third'); await ready;
+    const rejected = message(socket); const closed = once(socket, 'close');
+    socket.send(encodeAudioFrame('synthetic-third', 0, new ArrayBuffer(320_002), { capturedAt: 0, sampleRate: 16000, channels: 1, encoding: 'pcm_s16le', frameCount: 160001 }));
+    expect(await rejected).toMatchObject({ code: 'access_limit', message: 'この録音の時間上限に達しました。' });
+    await closed;
+  });
   it('does not let another login resume a detached recording with the same session ID', async () => {
     const h = await start(); const first = await cookie(h.base), second = await cookie(h.base);
     const a = await connect(h.ws, first); const ready = message(a); control(a, 'start'); await ready;

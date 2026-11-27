@@ -9,6 +9,9 @@ import { loadSummaryConfig } from './summary/config.js';
 import { loadCorrectionConfig } from './correction/config.js';
 import { createTranscriptionApplication, MAX_WEBSOCKET_PAYLOAD_BYTES } from './transcriptionApplication.js';
 import { createGroqWhisperProviderRuntime } from './providers/groq/groqWhisperProviderRuntime.js';
+import { SONIOX_ENDPOINT, SonioxProvider, type ConnectSoniox } from './providers/soniox/sonioxProvider.js';
+import { sonioxError, sonioxStatusError } from './providers/soniox/sonioxTranscript.js';
+import { createSonixProviderFactory } from './providers/sonix/sonixProvider.js';
 
 interface Fetcher { fetch(request: Request): Promise<Response> }
 interface Env {
@@ -91,9 +94,18 @@ export class MinutesDurableObject extends DurableObject<Env> {
       throw new Error('公開設定を確認してください。');
     }
     const summaryConfig = { ...loadSummaryConfig(bindings), usageFile: undefined };
+    const correctionConfig = loadCorrectionConfig({
+      ...bindings,
+      GROQ_CORRECTION_API_KEY: bindings.GROQ_CORRECTION_API_KEY?.trim() || bindings.GROQ_SUMMARY_API_KEY,
+    });
     const provider = createGroqWhisperProviderRuntime(config);
+    const createSonix = createSonixProviderFactory(config);
     const application = createTranscriptionApplication({
-      config, accessConfig, summaryConfig, createProvider: provider.create, correctionConfig: loadCorrectionConfig(bindings),
+      config, accessConfig, summaryConfig, correctionConfig,
+      createProvider: (requested) => {
+        if (requested === 'soniox') return new SonioxProvider({ externalEnabled: config.externalEnabled, apiKey: config.sonioxApiKey }, connectSonioxWorker);
+        return requested === 'sonix' ? createSonix() : provider.create();
+      },
     }, {
       loginAddress: (request) => {
         const ip = request.headers['cf-connecting-ip'];
@@ -112,6 +124,32 @@ export class MinutesDurableObject extends DurableObject<Env> {
     return application;
   }
 }
+
+const connectSonioxWorker: ConnectSoniox = async (key) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  const response = await fetch(SONIOX_ENDPOINT.replace(/^wss:/u, 'https:'), {
+    headers: { Upgrade: 'websocket', Authorization: `Bearer ${key}` }, redirect: 'manual', signal: controller.signal,
+  }).catch(() => {
+    throw sonioxError(controller.signal.aborted ? 'connect_timeout' : 'connect');
+  }).finally(() => clearTimeout(timer));
+  const socket = (response as Response & { webSocket?: WorkerSocket }).webSocket;
+  if (response.status !== 101 || !socket) {
+    await response.body?.cancel().catch(() => undefined);
+    throw sonioxStatusError(response.status) ?? sonioxError('upgrade', response.status);
+  }
+  return {
+    get bufferedAmount() { return socket.bufferedAmount ?? 0; },
+    send(data) { socket.send(data); },
+    close() { socket.close(1000); },
+    listen(onMessage, onEnd) {
+      socket.addEventListener('message', ({ data }) => onMessage(data));
+      socket.addEventListener('error', () => onEnd());
+      socket.addEventListener('close', (event) => onEnd(event.code));
+      socket.accept();
+    },
+  };
+};
 
 async function sendAsset(response: ServerResponse, assets: Fetcher, path: string, method: string): Promise<void> {
   const assetUrl = new URL('https://assets.invalid');

@@ -12,7 +12,7 @@
         <aside id="workspace-sidebar" class="workspace-sidebar" aria-label="会議メニュー">
           <div class="sidebar-header">
             <div class="brand"><span>Minutes</span></div>
-            <button id="new-meeting-button" class="workspace-icon" type="button" aria-label="新規会議" title="新規会議" aria-description="録音した音声を文字起こしのためGroqに送信します。"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button id="new-meeting-button" class="workspace-icon" type="button" aria-label="新規会議" title="新規会議"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
             <div id="home-active-meeting" hidden>
               <button id="resume-meeting-button" class="secondary-button" type="button">現在の会議</button>
             </div>
@@ -40,8 +40,7 @@
           <section id="home-view" class="app-view home-view" aria-labelledby="home-title">
             <div class="home-hero">
               <h1 id="home-title">会議を記録する</h1>
-              <p id="home-description">録音した音声を文字起こしのためGroqに送信します。</p>
-              <button id="workspace-start-button" class="workspace-icon workspace-start" type="button" aria-label="新規会議" title="新規会議" aria-describedby="home-description"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7Z"/></svg></button>
+              <button id="workspace-start-button" class="workspace-icon workspace-start" type="button" aria-label="新規会議" title="新規会議"><svg class="" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7Z"/></svg></button>
               <div id="home-connection-error" class="inline-alert" role="alert" hidden></div>
             </div>
           </section>
@@ -80,7 +79,7 @@
                     <p id="transcript-empty" class="transcript-empty">発言がここに表示されます。</p>
                     <ol id="final-transcript" class="transcript-list" aria-label="確定した文字起こし"></ol>
                     <div id="interim-transcript" class="interim-transcript" aria-live="polite" hidden>
-                      <span>聞き取り中</span><p id="interim-text"></p>
+                      <span id="interim-label">聞き取り中</span><p id="interim-text"></p>
                     </div>
                   </div>
                 </section>
@@ -139,6 +138,7 @@
                 <p id="detail-date" class="detail-date"></p>
               </div>
               <div class="detail-header__actions">
+                <button id="detail-settings-button" class="back-button" type="button" aria-haspopup="dialog" aria-controls="settings-panel" aria-label="設定">設定</button>
                 <button id="detail-share-button" class="secondary-button" type="button" aria-haspopup="dialog" hidden>共有</button>
                 <button id="detail-home-button" class="back-button" type="button">閉じる</button>
               </div>
@@ -187,19 +187,15 @@
           <section id="meeting-setup-settings" aria-label="次の会議の設定">
             <p class="privacy-copy">変更はこのページで始める次の会議に適用されます。</p>
             <div class="settings-grid">
-              <label class="field"><span>Groq Whisper モデル</span><select id="setup-groq-model"><option value="">サーバーの既定モデル</option><option value="whisper-large-v3-turbo">Whisper Large V3 Turbo</option><option value="whisper-large-v3">Whisper Large V3</option></select></label>
-              <label class="field"><span>言語</span><select id="setup-language"><option value="ja-JP">日本語</option><option value="en-US">English</option></select></label>
+              <label class="field"><span>文字起こしモデル</span><select id="setup-groq-model"><option value="">Groq Whisper（既定）</option><option value="whisper-large-v3-turbo">Whisper Large V3 Turbo</option><option value="whisper-large-v3">Whisper Large V3</option><option value="soniox" hidden disabled>Soniox（話者分離）</option><option value="sonix" hidden disabled>Sonix（録音後）</option></select></label>
             </div>
-            <fieldset><legend>要約・整文</legend><label><input id="setup-correction" type="checkbox" /> 確定した発言を整文する</label><label><input id="setup-live-summary" type="checkbox" /> ボタンで途中要約を作る</label></fieldset>
-            <fieldset id="setup-external-confirmation" hidden><legend>外部処理の確認</legend><p id="setup-external-description" class="privacy-copy"></p><label><input id="setup-external-ack" type="checkbox" /> 整文・途中要約での外部送信に同意します</label></fieldset>
-            <p id="setup-error" class="inline-alert" role="status" hidden></p>
           </section>
-          <details class="storage-settings">
+          <details class="storage-settings" hidden>
             <summary>会議履歴の保存先</summary>
             <p class="privacy-copy">確定発言はこの端末に途中保存され、再読み込み後は録音を停止した状態で復元します。終了した会議はページを閉じて開き直しても確認できます。サイトデータを削除すると失われ、別の端末やブラウザープロフィールには同期されません。クラウド保存・チーム共有・アカウント保護には対応していません。</p>
           </details>
 
-          <details id="developer-settings" class="developer-settings">
+          <details id="developer-settings" class="developer-settings" hidden>
             <summary>開発者向け表示</summary>
             <div class="developer-settings__content">
               <div class="developer-status-grid">

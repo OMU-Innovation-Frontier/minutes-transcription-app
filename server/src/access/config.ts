@@ -13,6 +13,7 @@ export interface AccessConfig {
   maxSessions: number;
   maxConnections: number;
   maxHttpConcurrent: number;
+  dailyLimitsEnabled?: boolean;
   dailyStarts: number;
   dailySummary: number;
   dailyCorrection: number;
@@ -29,6 +30,7 @@ export function loadAccessConfig(env: NodeJS.ProcessEnv = process.env): AccessCo
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname);
   const secure = origin.protocol === 'https:';
   const backend = env.APP_QUOTA_BACKEND || 'file';
+  const dailyLimitsEnabled = env.APP_DAILY_LIMITS_ENABLED !== 'false';
   if (enabled) {
     if ((!secure && !(local && env.APP_ALLOW_LOCAL_HTTP === 'true' && origin.protocol === 'http:'))
       || origin.origin !== rawOrigin || origin.username || origin.password) {
@@ -40,8 +42,8 @@ export function loadAccessConfig(env: NodeJS.ProcessEnv = process.env): AccessCo
     if (!['file', 'supabase'].includes(backend) || (backend === 'file' && Boolean(env.RENDER_EXTERNAL_URL))) {
       throw invalidSetting('APP_QUOTA_BACKEND', 'Renderではsupabaseを指定してください。');
     }
-    if (backend === 'file' && !env.APP_QUOTA_FILE) throw invalidSetting('APP_QUOTA_FILE', '永続保存する記録ファイルのパスを指定してください。');
-    if (backend === 'supabase') {
+    if (dailyLimitsEnabled && backend === 'file' && !env.APP_QUOTA_FILE) throw invalidSetting('APP_QUOTA_FILE', '永続保存する記録ファイルのパスを指定してください。');
+    if (dailyLimitsEnabled && backend === 'supabase') {
       if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(env.APP_QUOTA_SUPABASE_URL || '')) {
         throw invalidSetting('APP_QUOTA_SUPABASE_URL', 'Project URLを指定し、末尾のスラッシュ・パス・空白を除いてください。');
       }
@@ -60,6 +62,7 @@ export function loadAccessConfig(env: NodeJS.ProcessEnv = process.env): AccessCo
     maxSessions: number(env.APP_MAX_LOGIN_SESSIONS, 32, 1, 100),
     maxConnections: number(env.APP_MAX_RECORDINGS, 1, 1, 3),
     maxHttpConcurrent: number(env.APP_MAX_AI_CONCURRENT, 2, 1, 4),
+    dailyLimitsEnabled,
     dailyStarts: number(env.APP_DAILY_RECORDING_STARTS, 10, 1, 100),
     dailySummary: number(env.APP_DAILY_SUMMARY_REQUESTS, 30, 1, 1000),
     dailyCorrection: number(env.APP_DAILY_CORRECTION_REQUESTS, 2000, 1, 10_000),
