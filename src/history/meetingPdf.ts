@@ -1,10 +1,16 @@
 import type { MeetingRecord } from './meetingRecord';
 import { createMeetingSummaryHtml } from './meetingSummaryHtml';
+import { meetingPdfFilename } from './meetingExport';
+
+export async function createMeetingPdfFile(record: MeetingRecord): Promise<File> {
+  const bytes = await createMeetingPdf(record);
+  return new File([new Uint8Array(bytes)], meetingPdfFilename(record), { type: 'application/pdf' });
+}
 
 export async function createMeetingPdf(record: MeetingRecord): Promise<Uint8Array> {
   const content = createMeetingSummaryHtml(record);
   if ((content.textContent?.length ?? 0) > 100_000) {
-    throw new Error('最終要約が長すぎるためPDFにできません。');
+    throw new Error('議事録が長すぎるためPDFにできません。');
   }
   const host = document.createElement('div');
   host.setAttribute('aria-hidden', 'true');
@@ -14,7 +20,7 @@ export async function createMeetingPdf(record: MeetingRecord): Promise<Uint8Arra
   let overlay: HTMLElement | undefined;
   try {
     await document.fonts.ready;
-    if (content.scrollHeight > 14_000) throw new Error('最終要約のページ数が上限を超えています。');
+    if (content.scrollHeight > 14_000) throw new Error('議事録のページ数がPDFの上限を超えています。');
     const { default: html2pdf } = await import('html2pdf.js');
     const options = {
       margin: 10,

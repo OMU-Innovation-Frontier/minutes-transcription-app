@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { createMeetingPdf } from './meetingPdf';
+import { createMeetingPdf, createMeetingPdfFile } from './meetingPdf';
 import { createMeetingRecord } from './meetingRecord';
 import { createInitialMeetingSetupDraft, createMeetingSettingsSnapshot } from '../meetingSetup/meetingSetup';
 import { createFinalMeetingSummaryRecord } from '../summary/finalMeetingSummary';
@@ -31,7 +31,10 @@ it('converts summary HTML into PDF bytes and removes temporary content', async (
   Object.defineProperty(document, 'fonts', { configurable: true, value: { ready: Promise.resolve() } });
   render.mockResolvedValue(new Uint8Array([37, 80, 68, 70]).buffer);
   const before = document.body.childElementCount;
-  expect(await createMeetingPdf(record())).toEqual(new Uint8Array([37, 80, 68, 70]));
+  const file = await createMeetingPdfFile(record());
+  expect(file.type).toBe('application/pdf');
+  expect(file.name).toMatch(/^Minutes-.*\.pdf$/);
+  expect(file.size).toBe(4);
   expect(from.mock.calls[0]?.[0].textContent).toContain('合成の最終要約です。');
   expect(document.body.childElementCount).toBe(before);
 });

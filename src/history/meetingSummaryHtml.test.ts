@@ -37,6 +37,9 @@ it('renders all final summary sections and TODOs without transcript or executabl
   expect(JSON.stringify(source)).toBe(before);
 });
 
-it('requires a saved final summary', () => {
-  expect(() => createMeetingSummaryHtml(record(false))).toThrow('最終要約');
+it('renders the transcript when the meeting has no final summary', () => {
+  const html = createMeetingSummaryHtml(record(false));
+  expect(html.querySelector('h2')?.textContent).toBe('文字起こし');
+  expect(html.textContent).toContain('PDFに含めない合成の文字起こし');
+  expect(html.querySelectorAll('img, script, iframe')).toHaveLength(0);
 });

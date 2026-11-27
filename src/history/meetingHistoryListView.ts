@@ -205,7 +205,11 @@ function renderHistoryItem(
       option.type = 'button';
       option.textContent = label;
       option.disabled = deletion.disabled(item.meetingId);
-      option.addEventListener('click', () => { actions.open = false; callback(item.meetingId); });
+      option.addEventListener('click', () => {
+        actions.open = false;
+        trigger.focus();
+        callback(item.meetingId);
+      });
       panel.append(option);
     }
     const button = document.createElement('button');

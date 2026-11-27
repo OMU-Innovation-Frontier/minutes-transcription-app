@@ -3,7 +3,6 @@ import { parseMeetingRecord, type MeetingRecord } from './meetingRecord';
 export function createMeetingSummaryHtml(value: MeetingRecord): HTMLElement {
   const record = parseMeetingRecord(value);
   const finalSummary = record.finalSummary;
-  if (!finalSummary) throw new Error('最終要約を作成してからPDFを保存してください。');
   const root = document.createElement('article');
   root.lang = 'ja';
   root.className = 'meeting-summary-document';
@@ -37,6 +36,12 @@ export function createMeetingSummaryHtml(value: MeetingRecord): HTMLElement {
   append(header, 'h1', record.title ?? record.settingsSnapshot.title);
   append(header, 'p', new Intl.DateTimeFormat('ja-JP', { dateStyle: 'long', timeStyle: 'short' })
     .format(new Date(record.startedAt ?? record.createdAt))).className = 'date';
+  if (!finalSummary) {
+    append(root, 'h2', '文字起こし');
+    if (!record.transcript.utterances.length) append(root, 'p', '文字起こしはありません。');
+    for (const utterance of record.transcript.utterances) append(root, 'p', utterance.correctedText ?? utterance.rawText);
+    return root;
+  }
   append(root, 'h2', '最終要約');
   append(root, 'p', finalSummary.summary.overview);
   for (const [heading, items] of [
