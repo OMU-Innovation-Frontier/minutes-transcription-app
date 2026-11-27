@@ -41,13 +41,13 @@ Do not copy the project into another directory unless explicitly instructed.
 
 ## Commit identity
 
-Use the configured GitHub noreply identity.
+Use each contributor's own configured Git identity. No specific person or email address is required.
 
-Expected email:
+A GitHub noreply email is recommended for privacy, but is not required.
 
-235236025+Aoi1173@users.noreply.github.com
+Before committing, verify that both the author and committer have a non-empty name and email address. If either identity is missing or is known to belong to someone other than the contributor, stop and ask for clarification.
 
-Stop before committing when the configured author or committer identity is different.
+Do not change Git identity settings or impersonate another contributor without explicit instruction.
 
 ## Dependencies
 
