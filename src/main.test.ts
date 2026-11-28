@@ -3,8 +3,9 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { StartTranscriptionOptions } from './transcription/types';
 import type { AudioCaptureCallbacks } from './audio/types';
 
-const { startProvider, createProvider } = vi.hoisted(() => ({
+const { startProvider, stopProvider, createProvider } = vi.hoisted(() => ({
   startProvider: vi.fn<(options: StartTranscriptionOptions) => Promise<void>>(async () => undefined),
+  stopProvider: vi.fn<() => Promise<void>>(async () => undefined),
   createProvider: vi.fn(),
 }));
 
@@ -20,8 +21,8 @@ vi.mock('./transcription/providerFactory', () => ({
   createSpeechToTextProvider: (kind: string) => {
     createProvider(kind);
     return {
-      id: 'mock', label: 'Mock', isMock: true, isSupported: () => true,
-      start: startProvider, stop: async () => undefined, abort: async () => undefined,
+      id: kind === 'soniox' ? 'soniox' : 'mock', label: 'Mock', isMock: true, isSupported: () => true,
+      start: startProvider, stop: stopProvider, abort: async () => undefined,
       acceptChunk: () => undefined,
     };
   },
@@ -111,6 +112,13 @@ it('starts either way in one click and saves the title with or without a final s
     if (withSummary) {
       expect(finalRequests()[0]?.[1]?.headers).toMatchObject({ 'x-summary-provider': 'groq' });
       expect(document.body.textContent).toContain('合成の最終要約');
+      button('detail-settings-button').focus();
+      button('detail-settings-button').click();
+      expect(document.getElementById('settings-panel')?.hidden).toBe(false);
+      expect(document.getElementById('meeting-setup-settings')?.hidden).toBe(false);
+      button('settings-close-button').click();
+      expect(document.activeElement).toBe(button('detail-settings-button'));
+      expect(document.documentElement.dataset.appView).toBe('meeting-detail');
     }
     button('detail-home-button').click();
   }
@@ -190,10 +198,6 @@ it('summarizes on button press while recording and keeps previous interim summar
   vi.stubGlobal('fetch', request);
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
-  button('home-settings-button').click();
-  input('setup-live-summary').click();
-  await vi.waitFor(() => expect(document.getElementById('setup-error')?.hidden).toBe(true));
-  button('settings-close-button').click();
   let options!: StartTranscriptionOptions;
   startProvider.mockImplementationOnce(async (value) => { options = value; });
   button('workspace-start-button').click();
@@ -221,4 +225,58 @@ it('summarizes on button press while recording and keeps previous interim summar
   await vi.waitFor(() => expect(button('summarize-now-button').disabled).toBe(false));
   button('summarize-now-button').click();
   await vi.waitFor(() => expect(document.getElementById('interim-summary-history')?.childElementCount).toBe(2));
+});
+
+
+it('displays Soniox speaker text while recording and saves only confirmed turns', async () => {
+  vi.resetModules();
+  vi.stubGlobal('indexedDB', {});
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(
+    url.endsWith('/api/transcription/status') ? { sonioxRecordingLimitMs: 600_000 }
+      : { enabled: false, provider: 'mock', apiUsed: false, intervalSeconds: 10 },
+  ))));
+  document.body.innerHTML = readFileSync('index.html', 'utf8');
+  await import('./main');
+  const sonioxChoice = document.querySelector<HTMLButtonElement>('[role="radio"][data-value="soniox"]')!;
+  const sonixChoice = document.querySelector<HTMLButtonElement>('[role="radio"][data-value="sonix"]')!;
+  await vi.waitFor(() => expect(sonioxChoice.hidden).toBe(false));
+  button('home-settings-button').click();
+  expect(sonioxChoice.disabled).toBe(false);
+  expect(sonixChoice.hidden).toBe(true);
+  expect(sonixChoice.disabled).toBe(true);
+  sonioxChoice.click();
+  expect(sonioxChoice.getAttribute('aria-checked')).toBe('true');
+  button('settings-close-button').click();
+  expect(document.querySelector('.home-hero > p')).toBeNull();
+  expect(button('workspace-start-button').hasAttribute('aria-description')).toBe(false);
+
+  startProvider.mockClear();
+  button('new-meeting-button').click();
+  await vi.waitFor(() => expect(startProvider).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(button('start-button').disabled).toBe(false));
+  expect(createProvider).toHaveBeenLastCalledWith('soniox');
+  const options = startProvider.mock.calls[0]![0];
+  const update = {
+    sessionId: options.sessionId, revision: 0, language: 'ja-JP' as const,
+    startTime: 0, endTime: 1_000, createdAt: new Date().toISOString(),
+  };
+  options.callbacks?.onTranscript?.({
+    ...update, segmentId: 'preview', sequence: 0, provider: 'soniox', text: '話者A　合成の速報', isFinal: false,
+  });
+  expect(document.getElementById('interim-text')?.textContent).toBe('話者A　合成の速報');
+  expect(document.getElementById('final-transcript')?.textContent).not.toContain('合成の速報');
+
+  options.callbacks?.onTranscript?.({
+    ...update, segmentId: 'final', sequence: 1, provider: 'soniox', text: '合成の確定結果', isFinal: true, speakerLabel: '話者A',
+  });
+  options.callbacks?.onTranscript?.({ ...update, segmentId: 'preview', sequence: 2, provider: 'soniox', text: '', isFinal: false });
+  expect(document.getElementById('final-transcript')?.textContent).toContain('話者A');
+  button('end-meeting-button').click();
+  button('confirm-end-meeting-button').click();
+  await vi.waitFor(() => expect(document.documentElement.dataset.appView).toBe('meeting-detail'));
+  const detail = document.getElementById('detail-transcript')?.textContent;
+  expect(detail).toContain('話者A');
+  expect(detail).toContain('合成の確定結果');
+  expect(detail).not.toContain('合成の速報');
+  expect(document.getElementById('interim-text')?.textContent).toBe('');
 });

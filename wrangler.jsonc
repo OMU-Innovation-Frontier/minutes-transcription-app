@@ -17,8 +17,14 @@
   "vars": {
     "APP_ACCESS_ENABLED": "true",
     "APP_QUOTA_BACKEND": "supabase",
+    "APP_DAILY_LIMITS_ENABLED": "false",
+    "APP_MAX_RECORDING_SECONDS": "7200",
     "STT_PROVIDER": "groq-whisper",
     "STT_EXTERNAL_ENABLED": "true",
+    "SONIOX_LEGACY_KEY_NAME": "true",
+    "LLM_CORRECTION_ENABLED": "true",
+    "LLM_CORRECTION_PROVIDER": "groq",
+    "LLM_CORRECTION_REMOVE_FILLERS": "true",
     "SUMMARY_ENABLED": "true",
     "SUMMARY_PROVIDER": "groq",
     "SUMMARY_MAX_REQUESTS_PER_MEETING": "5"

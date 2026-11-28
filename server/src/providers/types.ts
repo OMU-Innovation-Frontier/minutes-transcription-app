@@ -7,6 +7,7 @@ export interface SttTranscriptResult {
   text: string;
   isFinal: boolean;
   language: WireLanguage;
+  speakerLabel?: string;
   confidence?: number;
   startTime: number;
   endTime?: number;

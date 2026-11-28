@@ -22,6 +22,9 @@ import { RealtimeDebugAudioStore } from './local/realtimeDebugAudio.js';
 import { MockServerSpeechToTextProvider } from './mockProvider.js';
 import type { SttProvider } from './types.js';
 import { createGroqWhisperProviderRuntime } from './groq/groqWhisperProviderRuntime.js';
+import { connectSonioxNode } from './soniox/sonioxNodeSocket.js';
+import { SonioxProvider } from './soniox/sonioxProvider.js';
+import { createSonixProviderFactory } from './sonix/sonixProvider.js';
 
 export interface ServerProviderRuntime {
   create(requestedProvider?: ServerProviderRequest): SttProvider;
@@ -68,8 +71,11 @@ export function createServerSpeechToTextProviderRuntime(
   const funAsrTransportFactory = dependencies.createFunAsrTransport
     ?? createLiveFunAsrTransportFactory(config, dependencies.createFunAsrWebSocket);
   const groqRuntime = createGroqWhisperProviderRuntime(config, dependencies);
+  const createSonix = createSonixProviderFactory(config, dependencies.fetch);
   return {
     create(requestedProvider) {
+      if (requestedProvider === 'soniox') return new SonioxProvider({ externalEnabled: config.externalEnabled, apiKey: config.sonioxApiKey }, connectSonioxNode);
+      if (requestedProvider === 'sonix') return createSonix();
       const provider = requestedProvider === 'local-whisper' ? 'local'
         : requestedProvider === 'groq-whisper' ? 'groq-whisper' : config.provider;
       if (provider === 'local') {

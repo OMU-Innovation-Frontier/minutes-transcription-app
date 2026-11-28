@@ -32,7 +32,6 @@ vi.mock('./history/indexedDbMeetingHistoryRepository', async () => {
 });
 
 const button = (id: string) => document.getElementById(id) as HTMLButtonElement;
-const input = (id: string) => document.getElementById(id) as HTMLInputElement;
 
 afterEach(() => {
   window.dispatchEvent(new Event('pagehide'));
@@ -52,10 +51,6 @@ it('summarizes on button press while recording and keeps previous interim summar
   vi.stubGlobal('fetch', request);
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
-  button('home-settings-button').click();
-  input('setup-live-summary').click();
-  await vi.waitFor(() => expect(document.getElementById('setup-error')?.hidden).toBe(true));
-  button('settings-close-button').click();
   let options!: StartTranscriptionOptions;
   startProvider.mockImplementationOnce(async (value) => { options = value; });
   button('workspace-start-button').click();

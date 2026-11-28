@@ -86,6 +86,7 @@ export class TranscriptStore {
       id: sentence.id, sessionId: sentence.sessionId, text: sentence.rawText,
       isFinal: true, startTime: sentence.startTime, endTime: sentence.endTime,
       language: sentence.language, provider: 'recovered', revision: sentence.revision,
+      ...(sentence.speakerLabel ? { speakerLabel: sentence.speakerLabel } : {}),
     }));
   }
 
@@ -114,7 +115,14 @@ export class TranscriptStore {
       this.finalIds.add(segmentKey);
       this.finalSegments = [...this.finalSegments, segment];
       if (this.interim?.id === segmentKey) this.interim = null;
-      this.assembler.add(raw);
+      if (raw.speakerLabel) {
+        this.assembler.flush('recording_stopped');
+        this.completedSentences = [...this.completedSentences, {
+          id: raw.id, sessionId: raw.sessionId, rawSegmentIds: [raw.id], rawText: raw.text, displayText: raw.text,
+          revision: raw.revision, language: raw.language, startTime: raw.startTime, endTime: raw.endTime ?? raw.startTime,
+          completionReason: 'recording_stopped', speakerLabel: raw.speakerLabel,
+        }];
+      } else this.assembler.add(raw);
       return true;
     }
     this.interim = segment;
@@ -253,6 +261,7 @@ function toRawSegment(update: TranscriptUpdate): RawTranscriptSegment {
     endTime: update.endTime,
     language: update.language === 'ja-JP' ? 'ja' : 'en',
     provider: update.provider,
+    ...(update.speakerLabel ? { speakerLabel: update.speakerLabel } : {}),
     revision: update.revision,
   };
 }

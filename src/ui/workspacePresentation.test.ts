@@ -115,8 +115,10 @@ describe('workspace presentation', () => {
     document.body.innerHTML = readFileSync('index.html', 'utf8');
     expect(document.querySelector('.brand__mark')).toBeNull();
     expect(document.querySelector('.meeting-controls #elapsed-time')).not.toBeNull();
-    for (const id of ['confirm-end-meeting-button', 'confirm-end-meeting-with-summary-button', 'meeting-share-dialog', 'rename-meeting-history-dialog', 'delete-meeting-history-dialog', 'setup-external-ack']) {
+    for (const id of ['confirm-end-meeting-button', 'confirm-end-meeting-with-summary-button', 'meeting-share-dialog', 'rename-meeting-history-dialog', 'delete-meeting-history-dialog', 'setup-groq-model']) {
       expect(document.getElementById(id)).not.toBeNull();
     }
+    expect(document.querySelectorAll('#meeting-setup-settings select')).toHaveLength(1);
+    expect(document.querySelector('#meeting-setup-settings input')).toBeNull();
   });
 });

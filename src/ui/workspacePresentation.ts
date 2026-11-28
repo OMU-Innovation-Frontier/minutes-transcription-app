@@ -35,7 +35,7 @@ export function createWorkspaceIcon(name: Icon): SVGSVGElement {
 }
 
 function iconFor(button: HTMLButtonElement, label: string): Icon {
-  if (button.id === 'home-settings-button') return 'settings';
+  if (button.id === 'home-settings-button' || button.id === 'detail-settings-button') return 'settings';
   if (button.id.includes('summary-toggle')) return 'chevron';
   if (/削除|クリア/.test(label)) return 'trash';
   if (/再試行|再読み込み|再接続|再生成|再作成/.test(label)) return 'refresh';
@@ -130,11 +130,13 @@ export function initializeWorkspacePresentation(): () => void {
     group.className = 'choice-group';
     group.setAttribute('role', 'radiogroup');
     group.setAttribute('aria-label', select.labels?.[0]?.querySelector('span')?.textContent ?? '表示設定');
+    const choices: { option: HTMLOptionElement; button: HTMLButtonElement }[] = [];
     const sync = () => {
-      for (const child of group.querySelectorAll<HTMLButtonElement>('button')) {
-        child.setAttribute('aria-checked', String(child.dataset.value === select.value));
-        child.disabled = select.disabled;
-        child.tabIndex = child.dataset.value === select.value ? 0 : -1;
+      for (const { option, button } of choices) {
+        button.setAttribute('aria-checked', String(option.selected));
+        button.hidden = option.hidden;
+        button.disabled = select.disabled || option.disabled;
+        button.tabIndex = option.selected && !button.hidden && !button.disabled ? 0 : -1;
       }
     };
     for (const option of select.options) {
@@ -144,16 +146,18 @@ export function initializeWorkspacePresentation(): () => void {
       button.dataset.value = option.value;
       button.setAttribute('role', 'radio');
       button.addEventListener('click', () => {
+        if (select.disabled || option.disabled || option.hidden) return;
         select.value = option.value;
         select.dispatchEvent(new Event('input', { bubbles: true }));
         select.dispatchEvent(new Event('change', { bubbles: true }));
         sync();
       }, options);
+      choices.push({ option, button });
       group.append(button);
     }
     group.addEventListener('keydown', (event) => {
       if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-      const buttons = [...group.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+      const buttons = [...group.querySelectorAll<HTMLButtonElement>('button:not(:disabled):not([hidden])')];
       const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
       if (current < 0) return;
       event.preventDefault();
@@ -165,6 +169,9 @@ export function initializeWorkspacePresentation(): () => void {
     select.hidden = true;
     select.after(group);
     select.addEventListener('change', sync, options);
+    const availabilityObserver = new MutationObserver(sync);
+    availabilityObserver.observe(select, { attributes: true, subtree: true, attributeFilter: ['disabled', 'hidden'] });
+    abort.signal.addEventListener('abort', () => availabilityObserver.disconnect(), { once: true });
     sync();
   }
 

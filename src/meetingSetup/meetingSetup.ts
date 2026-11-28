@@ -42,6 +42,8 @@ const LOCAL_CORRECTION_REQUIREMENTS: MeetingExternalProcessingRequirements = {
 
 export const meetingTranscriptionCatalog: readonly MeetingTranscriptionOption[] = [
   { id: 'groq-whisper', label: 'Groq Whisper（無料枠）', description: '音声を文字起こしするためGroqへ送信します。無料枠には利用上限があり、提供条件は変更される場合があります。', audience: 'standard', externalAcknowledgementRequired: true },
+  { id: 'sonix', label: 'Sonix（話者分離）', description: '録音全体をSonixに送信し、終了後に話者ごとの文字起こしを表示します。評価用の録音は最長10分です。', audience: 'standard', externalAcknowledgementRequired: true },
+  { id: 'soniox', label: 'Soniox（リアルタイム話者分離）', description: '録音中に音声をSonioxへ送信し、文字起こしと話者ラベルを随時表示します。録音は1会議につき最長2時間です。', audience: 'standard', externalAcknowledgementRequired: true },
   { id: 'local-whisper', label: 'Local Whisper', description: 'このPCのローカルサーバーで音声を処理します。外部STT APIへ音声を送信しません。', audience: 'standard', externalAcknowledgementRequired: false },
   { id: 'browser', label: 'ブラウザー音声認識', description: 'ブラウザーが提供する音声認識機能を使用します。処理方法とデータの扱いはブラウザーのポリシーに従います。', audience: 'standard', externalAcknowledgementRequired: true },
   { id: 'mock', label: 'Mock（開発者向け）', description: '外部送信を行わないテスト用Providerです。', audience: 'developer', externalAcknowledgementRequired: false },

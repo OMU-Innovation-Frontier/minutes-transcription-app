@@ -1,4 +1,5 @@
 import { encodeAudioFrame, parseServerMessage, ProtocolValidationError } from '../../shared/protocol';
+import { SONIX_PROCESSING_LIMIT_MS } from '../../shared/sonix';
 import { serverWebSocketUrl } from '../serverLocation';
 import { PendingAudioQueue, type AudioBufferSnapshot } from '../audio/pendingAudioQueue';
 import type { AudioChunk } from '../audio/types';
@@ -29,7 +30,7 @@ interface NetworkEventSource {
 }
 
 export interface WebSocketProviderDependencies {
-  mode?: 'server-default' | 'local-whisper' | 'groq-whisper';
+  mode?: 'server-default' | 'local-whisper' | 'groq-whisper' | 'sonix' | 'soniox';
   url?: string;
   createWebSocket?: (url: string) => WebSocketConnection;
   setTimeout?: typeof window.setTimeout;
@@ -54,7 +55,7 @@ const STOP_TIMEOUT_MS = 3_000;
 const BUFFER_POLL_MS = 25;
 
 export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
-  readonly id: 'websocket' | 'local-whisper' | 'groq-whisper';
+  readonly id: 'websocket' | 'local-whisper' | 'groq-whisper' | 'sonix' | 'soniox';
   readonly label: string;
   readonly isMock = false;
   readonly audioCaptureMode;
@@ -76,7 +77,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
   private readonly heartbeatTimeoutMs: number;
   private readonly maxBufferedAmountBytes: number;
   private readonly stopTimeoutMs: number;
-  private readonly requestedProvider: 'server-default' | 'local-whisper' | 'groq-whisper';
+  private readonly requestedProvider: 'server-default' | 'local-whisper' | 'groq-whisper' | 'sonix' | 'soniox';
   private socket: WebSocketConnection | null = null;
   private callbacks: SpeechToTextCallbacks = {};
   private sessionId = '';
@@ -117,7 +118,8 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
     this.requestedProvider = dependencies.mode ?? 'server-default';
     this.id = this.requestedProvider === 'server-default' ? 'websocket' : this.requestedProvider;
     this.label = this.requestedProvider === 'local-whisper' ? 'Local Whisper'
-      : this.requestedProvider === 'groq-whisper' ? 'Groq Whisper（無料枠）' : 'WebSocketサーバー認識';
+      : this.requestedProvider === 'groq-whisper' ? 'Groq Whisper（無料枠）' : this.requestedProvider === 'sonix' ? 'Sonix（話者分離）'
+      : this.requestedProvider === 'soniox' ? 'Soniox（リアルタイム話者分離）' : 'WebSocketサーバー認識';
     this.audioCaptureMode = this.requestedProvider === 'server-default' ? 'media-recorder' as const : 'pcm16-16khz' as const;
     this.url = dependencies.url ?? serverWebSocketUrl();
     this.createWebSocket = dependencies.createWebSocket ??
@@ -135,7 +137,8 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
     this.heartbeatIntervalMs = dependencies.heartbeatIntervalMs ?? envNumber('VITE_WS_HEARTBEAT_INTERVAL_MS', 5_000);
     this.heartbeatTimeoutMs = dependencies.heartbeatTimeoutMs ?? envNumber('VITE_WS_HEARTBEAT_TIMEOUT_MS', 10_000);
     this.maxBufferedAmountBytes = dependencies.maxBufferedAmountBytes ?? envNumber('VITE_WS_MAX_BUFFERED_AMOUNT_BYTES', 1_000_000);
-    this.stopTimeoutMs = dependencies.stopTimeoutMs ?? (this.requestedProvider === 'server-default' ? STOP_TIMEOUT_MS : 120_000);
+    this.stopTimeoutMs = dependencies.stopTimeoutMs ?? (this.requestedProvider === 'sonix' ? SONIX_PROCESSING_LIMIT_MS + 30_000
+      : this.requestedProvider === 'soniox' ? 25_000 : this.requestedProvider === 'server-default' ? STOP_TIMEOUT_MS : 120_000);
     this.queue = dependencies.queue ?? new PendingAudioQueue({
       maxSeconds: envNumber('VITE_AUDIO_BUFFER_MAX_SECONDS', 60),
       maxBytes: envNumber('VITE_AUDIO_BUFFER_MAX_BYTES', 25_000_000),
@@ -220,7 +223,8 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
       this.stopTimer = this.scheduleTimeout(() => {
         this.callbacks.onError?.({
           code: 'network',
-          message: '停止前に未送信音声をサーバーへ届けられませんでした。音声はローカルキューに保持されています。',
+          message: this.id === 'sonix' && this.stopRequested ? 'Sonixの文字起こし結果の受信がタイムアウトしました。'
+            : '停止前に未送信音声をサーバーへ届けられませんでした。音声はローカルキューに保持されています。',
         });
         this.finishStop();
       }, this.stopTimeoutMs);
@@ -329,6 +333,9 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
     socket.onclose = () => {
       if (!this.isCurrent(socket, generation)) return;
       if (this.stopRequested || !this.active) {
+        if ((this.id === 'sonix' || this.id === 'soniox') && this.gracefulStopPending) {
+          this.callbacks.onError?.({ code: 'network', message: '最後の文字起こしを受信する前に接続が切れました。' });
+        }
         this.finishStop();
         return;
       }
@@ -418,6 +425,7 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
         isFinal: message.isFinal,
         language: fromWireLanguage(message.language),
         provider: message.provider ?? this.id,
+        ...(message.speakerLabel === undefined ? {} : { speakerLabel: message.speakerLabel }),
         startTime: message.startTime,
         endTime: message.endTime,
         confidence: message.confidence,
@@ -444,7 +452,10 @@ export class WebSocketSpeechToTextProvider implements SpeechToTextProvider {
         return;
       }
       if (message.retryable) this.handleConnectionLoss(error, socket, generation);
-      else this.fail(error);
+      else {
+        this.fail(error);
+        if ((this.id === 'sonix' || this.id === 'soniox') && this.gracefulStopPending) this.finishStop();
+      }
       return;
     }
     if (message.type === 'stopped') this.finishStop();

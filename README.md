@@ -12,6 +12,12 @@
 
 ビルド環境に `NODE_VERSION=22.13.0` と `SKIP_DEPENDENCY_INSTALL=1` を設定します。GitHub CI では本番へのアップロードを伴わない Wrangler のドライランを実行します。
 
+## Sonioxでリアルタイムに話者分離を確認する
+
+Cloudflareでは Worker `minutes` の **Settings → Variables and Secrets** に Soniox の `SONIOX_API_KEY` を **Secret** として登録します。`minutes` では既存の Soniox キーを入れた旧名 `SONIX_API_KEY` も使用できます。新旧両方を設定した場合は `SONIOX_API_KEY` が優先されます。ローカルではサーバーの `.env` に `SONIOX_API_KEY` を設定し、`STT_EXTERNAL_ENABLED=true` で起動します。
+
+「設定」の「文字起こしモデル」で「Soniox（話者分離）」を選び、新規会議を始めます。録音中に「話者A」「話者B」などを表示し、確定した発言を履歴へ保存します。ラベルは録音ごとに割り当てます。本番では1会議の録音は最長2時間で、アプリの日次利用上限はありません。
+
 ## サークル向けの限定公開
 
 合言葉による入室と全員共通の利用上限を有効にし、Render Free + Supabase Freeで動かす設定を追加しました。参加者へ渡すのはURLと合言葉だけです。管理者による外部サービスの設定と実機確認は別途必要です。[限定公開の設定・起動・参加者向け手順](docs/LIMITED_PILOT.md)を参照してください。

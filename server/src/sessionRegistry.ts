@@ -43,7 +43,11 @@ export class TranscriptionSessionRegistry {
       );
     }
     if (this.sessions.size >= this.options.maxSessions) {
-      throw new ProtocolValidationError('session_limit', '同時セッション数の上限に達しています。');
+      // Keep a stopped session for late reconnects only while capacity permits.
+      const stopped = [...this.sessions.values()].find((session) => session.stopped && session.connectionId === null);
+      if (!stopped) throw new ProtocolValidationError('session_limit', '同時セッション数の上限に達しています。');
+      clearTimeout(stopped.cleanupTimer);
+      this.sessions.delete(stopped.sessionId);
     }
 
     const provider = this.providerFactory(message.provider);

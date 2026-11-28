@@ -8,6 +8,7 @@ export function createSpeechToTextProvider(kind: SpeechToTextProviderKind): Spee
   if (kind === 'websocket') return new WebSocketSpeechToTextProvider();
   if (kind === 'local-whisper') return new WebSocketSpeechToTextProvider({ mode: 'local-whisper' });
   if (kind === 'groq-whisper') return new WebSocketSpeechToTextProvider({ mode: 'groq-whisper' });
+  if (kind === 'sonix' || kind === 'soniox') return new WebSocketSpeechToTextProvider({ mode: kind });
   return new MockSpeechToTextProvider();
 }
 

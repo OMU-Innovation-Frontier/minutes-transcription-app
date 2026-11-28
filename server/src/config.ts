@@ -58,6 +58,8 @@ export interface ServerConfig {
   localSttDebugAudioDirectory: string;
   localSttDebugAudioMaxFiles: number;
   localSttDebugAudioMaxBytes: number;
+  sonixApiKey?: string;
+  sonioxApiKey?: string;
   groqApiKey?: string;
   groqModel: string;
   groqRequestTimeoutMs: number;
@@ -77,6 +79,7 @@ export interface ServerConfig {
 
 export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const localSttEngine = readLocalSttEngine(env.LOCAL_STT_ENGINE);
+  const legacySonioxSecret = readBoolean(env.SONIOX_LEGACY_KEY_NAME, false);
   return {
     host: env.STT_HOST || '127.0.0.1',
     port: readInteger(env.STT_PORT ?? env.PORT, 8787, 0, 65_535),
@@ -161,6 +164,8 @@ export function loadServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
       1_000_000,
       Number.MAX_SAFE_INTEGER,
     ),
+    sonixApiKey: legacySonioxSecret ? undefined : readOptionalString(env.SONIX_API_KEY),
+    sonioxApiKey: readOptionalString(env.SONIOX_API_KEY) ?? (legacySonioxSecret ? readOptionalString(env.SONIX_API_KEY) : undefined),
     groqApiKey: readOptionalString(env.GROQ_API_KEY),
     groqModel: env.GROQ_STT_MODEL?.trim() || 'whisper-large-v3-turbo',
     groqRequestTimeoutMs: readInteger(env.GROQ_STT_REQUEST_TIMEOUT_MS, 30_000, 1_000, 120_000),
