@@ -20,6 +20,7 @@ export class CorrectionHttpClient {
   constructor(
     private readonly baseUrl = serverHttpUrl(),
     request: typeof fetch = window.fetch,
+    private readonly provider?: 'openai',
   ) {
     this.request = request.bind(window);
   }
@@ -34,16 +35,20 @@ export class CorrectionHttpClient {
   }
 
   private async get(path: string): Promise<unknown> {
-    return this.parse(await this.request(`${this.baseUrl}${path}`));
+    return this.parse(await this.request(this.endpoint(path)));
   }
 
   private async post(path: string, body: unknown, signal: AbortSignal): Promise<unknown> {
-    return this.parse(await this.request(`${this.baseUrl}${path}`, {
+    return this.parse(await this.request(this.endpoint(path), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
       signal,
     }));
+  }
+
+  private endpoint(path: string): string {
+    return `${this.baseUrl}${path}${this.provider ? `?provider=${this.provider}` : ''}`;
   }
 
   private async parse(response: Response): Promise<unknown> {

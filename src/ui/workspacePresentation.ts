@@ -57,7 +57,7 @@ function iconFor(button: HTMLButtonElement, label: string): Icon {
 }
 
 export function decorateWorkspaceButton(button: HTMLButtonElement): void {
-  if (button.closest('.choice-group') || button.classList.contains('history-entry__surface')) return;
+  if (button.closest('.choice-group') || button.classList.contains('history-entry__surface') || button.id === 'setup-glossary-save') return;
   const text = button.textContent?.trim() ?? '';
   const label = button.getAttribute('aria-label') || text || button.title;
   if (!label) return;

@@ -1,4 +1,4 @@
-import { GROQ_CORRECTION_MODEL } from './config.js';
+import { GROQ_CORRECTION_MODEL, OPENAI_CORRECTION_MODEL } from './config.js';
 import { CorrectionProviderError, correctionProviderError } from './provider.js';
 
 export const GROQ_CORRECTION_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
@@ -16,6 +16,7 @@ export interface GroqCorrectionClientOptions {
   maxOutputTokens: number;
   reasoningEffort: 'low';
   fetch?: typeof fetch;
+  provider?: 'groq' | 'openai';
 }
 
 export const GROQ_CORRECTION_RESPONSE_SCHEMA = Object.freeze({
@@ -84,7 +85,7 @@ export class GroqCorrectionClient {
     try {
       const response = await abortableFetch(
         this.fetchImplementation,
-        GROQ_CORRECTION_ENDPOINT,
+        this.options.provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' : GROQ_CORRECTION_ENDPOINT,
         {
           method: 'POST',
           redirect: 'manual',
@@ -95,8 +96,9 @@ export class GroqCorrectionClient {
           body: JSON.stringify({
             model: this.options.model,
             messages,
-            temperature: 0,
-            reasoning_effort: this.options.reasoningEffort,
+            ...(this.options.provider === 'openai'
+              ? { reasoning_effort: 'none' }
+              : { temperature: 0, reasoning_effort: this.options.reasoningEffort }),
             stream: false,
             store: false,
             max_completion_tokens: this.options.maxOutputTokens,
@@ -140,7 +142,8 @@ export class GroqCorrectionClient {
   private assertConfigured(): void {
     if (this.disposed) throw correctionProviderError('provider_unavailable');
     if (!this.options.apiKey.trim()) throw correctionProviderError('api_key_missing');
-    if (this.options.model !== GROQ_CORRECTION_MODEL) throw correctionProviderError('unsupported_model');
+    const model = this.options.provider === 'openai' ? OPENAI_CORRECTION_MODEL : GROQ_CORRECTION_MODEL;
+    if (this.options.model !== model) throw correctionProviderError('unsupported_model');
     if (
       !Number.isSafeInteger(this.options.timeoutMs)
       || this.options.timeoutMs < 10

@@ -9,7 +9,7 @@ import {
   type CorrectionServiceStatus,
   type TranscriptCorrection,
 } from '../../../shared/correction.js';
-import type { CorrectionConfig } from './config.js';
+import { OPENAI_CORRECTION_MODEL, type CorrectionConfig } from './config.js';
 import { GroqCorrectionClient } from './groqCorrectionClient.js';
 import { GroqCorrectionProvider } from './groqCorrectionProvider.js';
 import { MockCorrectionProvider } from './mockCorrectionProvider.js';
@@ -58,7 +58,7 @@ export class CorrectionService {
     }
     const input = {
       ...request.input,
-      glossary: this.config.glossary.length > 0 ? this.config.glossary : request.input.glossary,
+      glossary: [...this.config.glossary, ...request.input.glossary].slice(0, 500),
       removeFillers: this.config.removeFillers,
     };
     try {
@@ -132,6 +132,21 @@ export function createCorrectionService(
   if (config.provider === 'mock') {
     const enabled = config.enabled && config.configurationError === undefined;
     return new CorrectionService({ ...config, enabled }, new MockCorrectionProvider());
+  }
+  if (config.provider === 'openai') {
+    const model = OPENAI_CORRECTION_MODEL;
+    const apiKey = config.openAIApiKey;
+    if (!config.enabled || config.configurationError || !apiKey) {
+      return new CorrectionService({ ...config, enabled: false }, new UnavailableCorrectionProvider(
+        'openai', config.configurationError ?? (config.enabled ? 'api_key_missing' : 'external_disabled'), model, true,
+      ));
+    }
+    const client = new GroqCorrectionClient({
+      provider: 'openai', apiKey, model, timeoutMs: config.timeoutMs,
+      maxResponseBytes: config.groqMaxResponseBytes, maxOutputTokens: config.groqMaxOutputTokens,
+      reasoningEffort: config.groqReasoningEffort, fetch: options.fetch,
+    });
+    return new CorrectionService(config, new GroqCorrectionProvider(client, { provider: 'openai', maxOutputRatio: config.maxOutputRatio }));
   }
   if (config.provider === 'groq') {
     const model = config.groqModel === 'openai/gpt-oss-20b' ? config.groqModel : 'unavailable';

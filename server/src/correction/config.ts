@@ -2,6 +2,7 @@ import { CORRECTION_POLICY_VERSION, parseGlossary, type GlossaryEntry } from '..
 import type { CorrectionProviderErrorCode } from './provider.js';
 
 export const GROQ_CORRECTION_MODEL = 'openai/gpt-oss-20b';
+export const OPENAI_CORRECTION_MODEL = 'gpt-6-luna';
 export const GROQ_CORRECTION_MAX_RESPONSE_BYTES = 65_536;
 export const GROQ_CORRECTION_MAX_OUTPUT_TOKENS = 1_024;
 export const GROQ_CORRECTION_REASONING_EFFORT = 'low';
@@ -17,6 +18,7 @@ export interface CorrectionConfig {
   correctionPolicyVersion: string;
   glossary: GlossaryEntry[];
   groqApiKey?: string;
+  openAIApiKey?: string;
   groqModel: string;
   groqMaxResponseBytes: number;
   groqMaxOutputTokens: number;
@@ -76,6 +78,7 @@ export function loadCorrectionConfig(env: NodeJS.ProcessEnv = process.env): Corr
     correctionPolicyVersion: env.LLM_CORRECTION_POLICY_VERSION?.trim() || CORRECTION_POLICY_VERSION,
     glossary: parseGlossaryJson(env.LLM_CORRECTION_GLOSSARY_JSON),
     groqApiKey: env.GROQ_CORRECTION_API_KEY?.trim() || undefined,
+    openAIApiKey: env.OPENAI_API_KEY?.trim() || undefined,
     groqModel: model,
     groqMaxResponseBytes: maxResponseBytes.value,
     groqMaxOutputTokens: maxOutputTokens.value,

@@ -101,7 +101,7 @@ export class MinutesDurableObject extends DurableObject<Env> {
     const provider = createGroqWhisperProviderRuntime(config);
     const createSonix = createSonixProviderFactory(config);
     const application = createTranscriptionApplication({
-      config, accessConfig, summaryConfig, correctionConfig,
+      config, accessConfig, summaryConfig, correctionConfig, textModelEnvironment: bindings,
       createProvider: (requested) => {
         if (requested === 'soniox') return new SonioxProvider({ externalEnabled: config.externalEnabled, apiKey: config.sonioxApiKey }, connectSonioxWorker);
         return requested === 'sonix' ? createSonix() : provider.create();

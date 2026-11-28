@@ -188,6 +188,15 @@
             <p class="privacy-copy">変更はこのページで始める次の会議に適用されます。</p>
             <div class="settings-grid">
               <label class="field"><span>文字起こしモデル</span><select id="setup-groq-model"><option value="">Groq Whisper（既定）</option><option value="whisper-large-v3-turbo">Whisper Large V3 Turbo</option><option value="whisper-large-v3">Whisper Large V3</option><option value="soniox" hidden disabled>Soniox（話者分離）</option><option value="sonix" hidden disabled>Sonix（録音後）</option></select></label>
+              <label class="field"><span>要約モデル</span><select id="setup-summary-model"><option value="">Groq（既定）</option><option value="openai" hidden disabled>GPT-6 Luna</option></select></label>
+              <label class="settings-switch"><span>整文</span><input id="setup-correction-toggle" type="checkbox" role="switch" checked></label>
+              <label class="field" id="setup-correction-model-field"><span>整文モデル</span><select id="setup-correction-model"><option value="">Groq（既定）</option><option value="openai" hidden disabled>GPT-6 Luna</option></select></label>
+            </div>
+            <div class="settings-glossary">
+              <label class="field"><span>整文辞書</span><textarea id="setup-glossary" rows="3" maxlength="2000" aria-describedby="setup-glossary-help" placeholder="Minutes, ミニッツ"></textarea></label>
+              <p class="privacy-copy" id="setup-glossary-help">1行に1語。別表記がある場合は、カンマで区切って入力します。</p>
+              <button type="button" class="secondary-button" id="setup-glossary-save">辞書を保存</button>
+              <span id="setup-glossary-status" role="status"></span>
             </div>
           </section>
           <details class="storage-settings" hidden>

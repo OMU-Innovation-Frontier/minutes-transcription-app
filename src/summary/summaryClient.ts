@@ -29,6 +29,7 @@ export class SummaryHttpClient {
   constructor(
     private readonly baseUrl = serverHttpUrl(),
     request: typeof fetch = window.fetch,
+    private readonly provider?: 'openai',
   ) {
     this.request = request.bind(window);
   }
@@ -50,15 +51,20 @@ export class SummaryHttpClient {
   }
 
   private async get(path: string): Promise<unknown> {
-    return this.parse(await this.request(`${this.baseUrl}${path}`));
+    return this.parse(await this.request(this.endpoint(path)));
   }
 
   private async post(path: string, body: unknown, expectedProvider?: SummaryStatus['provider']): Promise<unknown> {
-    return this.parse(await this.request(`${this.baseUrl}${path}`, {
+    return this.parse(await this.request(this.endpoint(path), {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(expectedProvider ? { 'x-summary-provider': expectedProvider } : {}) },
       body: JSON.stringify(body),
     }));
+  }
+
+  private endpoint(path: string): string {
+    const query = this.provider ? `${path.includes('?') ? '&' : '?'}provider=${this.provider}` : '';
+    return `${this.baseUrl}${path}${query}`;
   }
 
   private async parse(response: Response): Promise<unknown> {
@@ -287,6 +293,7 @@ function safeHttpErrorMessage(value: unknown): string {
   if (code === 'summary_input_too_large') return '要約対象が長すぎます。文字起こしは保持しています。要約の入力上限と設定を確認してください。';
   if (code === 'summary_rate_limited') return '要約サービスの利用制限に達しました。時間をおいて手動で再試行してください。';
   if (code === 'summary_disabled') return '要約機能は現在無効です。';
+  if (code === 'text_model_unavailable') return '選択した要約モデルを利用できません。';
   if (code === 'invalid_request') return '要約に必要な情報を確認できませんでした。';
   if (code === 'budget_exceeded') return '要約処理を現在実行できません。';
   return '要約サービスとの通信に失敗しました。';

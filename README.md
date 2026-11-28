@@ -22,13 +22,15 @@ Cloudflareでは Worker `minutes` の **Settings → Variables and Secrets** に
 
 合言葉による入室と全員共通の利用上限を有効にし、Render Free + Supabase Freeで動かす設定を追加しました。参加者へ渡すのはURLと合言葉だけです。管理者による外部サービスの設定と実機確認は別途必要です。[限定公開の設定・起動・参加者向け手順](docs/LIMITED_PILOT.md)を参照してください。
 
-## OpenAIで会議終了時の要約を生成する
+## GPT-6 Lunaで要約・整文する
 
-既存の最終要約・決定事項・TODO表示と履歴保存に、サーバー側のOpenAI Responses APIを接続できます。会議準備画面で送信内容を説明し、同意後に使用します。既定は無効・Mockのままです。設定と実機テスト手順は[OpenAI最終要約](docs/OPENAI_FINAL_SUMMARY.md)を参照してください。
+Cloudflare Worker `minutes` の **Settings → Variables and Secrets** で `OPENAI_API_KEY` を **Secret** として登録します。ローカルではサーバーの `.env` に設定します。要約・整文がサーバーで有効な場合、会議設定で用途ごとに「GPT-6 Luna」を選択できます。要約モデルは途中要約と最終要約の両方に適用されます。
+
+整文は会議設定で切り替えられます。整文辞書は `正式表記, 別表記` の形式で1行ずつ入力し、「辞書を保存」でこのブラウザーに登録します。設定は次の会議から適用されます。
 
 ## Groqでも途中要約・最終要約を作る
 
-要約先をサーバー設定で `SUMMARY_PROVIDER=groq` に切り替えられます。OpenAI設定・既定値は保持します。専用のサーバー設定とキーが必要で、画面でGroqへの送信を確認して同意します。保存・TODO・PDF出力は既存の経路を使います。
+サーバーの既定の要約先は `SUMMARY_PROVIDER=groq` でGroqに設定できます。専用のサーバー設定とキーが必要です。保存・TODO・PDF出力は既存の経路を使います。
 
 [Groq要約の設定・制限・比較手順](docs/GROQ_SUMMARY.md)を参照してください。実API・品質・無料枠内での長時間利用は未検証です。
 
