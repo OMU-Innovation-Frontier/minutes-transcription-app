@@ -13,7 +13,8 @@ import { TranscriptionSessionRegistry } from './sessionRegistry.js';
 import { loadSummaryConfig, type SummaryConfig } from './summary/config.js';
 import { createSummaryService, SummaryServiceError, type SummaryService } from './summary/summaryService.js';
 import type { FinalSummaryInput, IncrementalSummaryInput } from '../../shared/summary.js';
-import { loadCorrectionConfig, type CorrectionConfig } from './correction/config.js';
+import { loadCorrectionConfig, OPENAI_CORRECTION_MODEL, type CorrectionConfig } from './correction/config.js';
+import { ApiUsageStore } from './summary/usageStore.js';
 import { createCorrectionService, type CorrectionService } from './correction/correctionService.js';
 
 export const MAX_WEBSOCKET_PAYLOAD_BYTES = MAX_AUDIO_CHUNK_BYTES + MAX_SESSION_ID_BYTES + 25;
@@ -26,6 +27,7 @@ export interface TranscriptionApplicationOptions {
   summaryService?: SummaryService;
   correctionConfig?: CorrectionConfig;
   correctionService?: CorrectionService;
+  textModelEnvironment?: NodeJS.ProcessEnv;
 }
 
 export interface RecordingSocket {
@@ -49,8 +51,23 @@ export function createTranscriptionApplication(options: TranscriptionApplication
   const access = accessConfig.enabled ? new LimitedAccess(accessConfig) : null;
   const privateRegistries = new Map<string, TranscriptionSessionRegistry>();
   const socketSessions = new Map<RecordingSocket, AccessSession>();
-  const summaryService = options.summaryService ?? createSummaryService(options.summaryConfig ?? loadSummaryConfig());
-  const correctionService = options.correctionService ?? createCorrectionService(options.correctionConfig ?? loadCorrectionConfig());
+  const textEnvironment = options.textModelEnvironment ?? process.env;
+  const summaryConfig = options.summaryConfig ?? loadSummaryConfig(textEnvironment);
+  const correctionConfig = options.correctionConfig ?? loadCorrectionConfig(textEnvironment);
+  const usageStore = new ApiUsageStore(summaryConfig.usageFile);
+  const defaultSummaryService = options.summaryService ?? createSummaryService(summaryConfig, usageStore);
+  const defaultCorrectionService = options.correctionService ?? createCorrectionService(correctionConfig);
+  const lunaKey = textEnvironment.OPENAI_API_KEY?.trim();
+  const lunaSummaryService = lunaKey && summaryConfig.enabled ? createSummaryService({
+    ...summaryConfig, provider: 'openai', apiKey: lunaKey,
+    liveModel: OPENAI_CORRECTION_MODEL, finalModel: OPENAI_CORRECTION_MODEL,
+    liveReasoningEffort: 'low', finalReasoningEffort: 'low',
+    maxOutputTokens: 4096, pricingJson: textEnvironment.OPENAI_PRICING_JSON,
+  }, usageStore) : undefined;
+  const lunaCorrectionService = lunaKey && correctionConfig.enabled ? createCorrectionService({
+    ...loadCorrectionConfig({ ...textEnvironment, LLM_CORRECTION_PROVIDER: 'openai' }),
+    enabled: true, openAIApiKey: lunaKey,
+  }) : undefined;
   const sessionRegistry = new TranscriptionSessionRegistry(
     createProvider,
     { resumeTtlMs: config.sessionResumeTtlMs ?? 120_000, maxSessions: config.maxSessions },
@@ -106,6 +123,19 @@ export function createTranscriptionApplication(options: TranscriptionApplication
       return;
     }
     const url = new URL(request.url ?? '/', 'http://localhost');
+    if (request.method === 'GET' && url.pathname === '/api/text-models') {
+      response.setHeader('cache-control', 'no-store');
+      sendJson(response, 200, { lunaSummary: Boolean(lunaSummaryService), lunaCorrection: lunaCorrectionService?.status().enabled === true });
+      return;
+    }
+    const selectedTextProvider = url.searchParams.get('provider');
+    const summaryService = selectedTextProvider === 'openai' ? lunaSummaryService : defaultSummaryService;
+    const correctionService = selectedTextProvider === 'openai' ? lunaCorrectionService : defaultCorrectionService;
+    if (selectedTextProvider !== null && (url.pathname.startsWith('/api/summary/') || url.pathname === '/api/correction' || url.pathname === '/api/correction/status')
+      && (selectedTextProvider !== 'openai' || (url.pathname.startsWith('/api/summary/') ? !summaryService : !correctionService?.status().enabled))) {
+      sendJson(response, 409, { code: 'text_model_unavailable', message: '選択したモデルを利用できません。' });
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/api/transcription/status') {
       response.setHeader('cache-control', 'no-store');
       const sonixRecordingLimitMs = access ? Math.min(SONIX_RECORDING_LIMIT_MS, access.config.recordingMs - 5_000) : SONIX_RECORDING_LIMIT_MS;
@@ -115,11 +145,11 @@ export function createTranscriptionApplication(options: TranscriptionApplication
       });
       return;
     }
-    if (request.method === 'GET' && url.pathname === '/api/correction/status') {
+    if (correctionService && request.method === 'GET' && url.pathname === '/api/correction/status') {
       sendJson(response, 200, correctionService.status());
       return;
     }
-    if (request.method === 'POST' && url.pathname === '/api/correction') {
+    if (correctionService && request.method === 'POST' && url.pathname === '/api/correction') {
       const release = access && principal ? await access.beginHttp(principal, 'correction') : () => undefined;
       try {
         const body = await readJsonBody(request);
@@ -130,11 +160,11 @@ export function createTranscriptionApplication(options: TranscriptionApplication
       finally { release(); }
       return;
     }
-    if (request.method === 'GET' && url.pathname === '/api/summary/status') {
+    if (summaryService && request.method === 'GET' && url.pathname === '/api/summary/status') {
       sendJson(response, 200, summaryService.status());
       return;
     }
-    if (request.method === 'GET' && url.pathname === '/api/summary/usage') {
+    if (summaryService && request.method === 'GET' && url.pathname === '/api/summary/usage') {
       const originalId = url.searchParams.get('meetingId');
       const meetingId = access && principal && originalId ? access.namespace(principal, originalId) : originalId;
       if (!meetingId) {
@@ -146,7 +176,7 @@ export function createTranscriptionApplication(options: TranscriptionApplication
         .catch((error) => sendSummaryError(response, error));
       return;
     }
-    if (request.method === 'POST' && (url.pathname === '/api/summary/live' || url.pathname === '/api/summary/final')) {
+    if (summaryService && request.method === 'POST' && (url.pathname === '/api/summary/live' || url.pathname === '/api/summary/final')) {
       if (origin && !(access ? origin === access.config.origin : config.allowedOrigins.has(origin))) {
         sendJson(response, 403, { code: 'invalid_origin', message: 'この接続元からは要約を実行できません。' });
         return;
@@ -154,7 +184,7 @@ export function createTranscriptionApplication(options: TranscriptionApplication
       const selectedProvider = summaryService.status().provider;
       const expectedProvider = request.headers['x-summary-provider'];
       if ((expectedProvider !== undefined && expectedProvider !== selectedProvider)
-        || (selectedProvider === 'groq' && expectedProvider !== 'groq')) {
+        || ((selectedProvider === 'groq' || selectedTextProvider === 'openai') && expectedProvider !== selectedProvider)) {
         sendJson(response, 409, { code: 'summary_provider_changed', message: '要約先を会議設定で確認し直してください。' });
         return;
       }
@@ -284,8 +314,9 @@ export function createTranscriptionApplication(options: TranscriptionApplication
       await sessionRegistry.closeAll();
       await Promise.all([...privateRegistries.values()].map(registry => registry.closeAll()));
       await access?.close();
-      await correctionService.dispose();
-      summaryService.dispose();
+      await Promise.all([defaultCorrectionService.dispose(), lunaCorrectionService?.dispose()]);
+      defaultSummaryService.dispose();
+      lunaSummaryService?.dispose();
     },
   };
 }

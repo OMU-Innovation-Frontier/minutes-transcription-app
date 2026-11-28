@@ -270,7 +270,9 @@ function parseSettingsSnapshot(value: unknown): MeetingSettingsSnapshot {
   if (groqModel !== undefined && (transcriptionProvider !== 'groq-whisper' || !isGroqWhisperModel(groqModel))) {
     throw new MeetingRecordValidationError();
   }
-  if (typeof settings.correctionEnabled !== 'boolean'
+  if ((settings.summaryProvider !== undefined && settings.summaryProvider !== 'openai')
+    || (settings.correctionProvider !== undefined && settings.correctionProvider !== 'openai')
+    || typeof settings.correctionEnabled !== 'boolean'
     || typeof settings.liveSummaryEnabled !== 'boolean'
     || typeof settings.finalSummaryEnabled !== 'boolean'
     || settings.historyRetention !== 'page-session') {
@@ -282,6 +284,8 @@ function parseSettingsSnapshot(value: unknown): MeetingSettingsSnapshot {
     language: settings.language,
     transcriptionProvider,
     ...(groqModel === undefined ? {} : { groqModel }),
+    ...(settings.summaryProvider ? { summaryProvider: settings.summaryProvider } : {}),
+    ...(settings.correctionProvider ? { correctionProvider: settings.correctionProvider } : {}),
     correctionEnabled: settings.correctionEnabled,
     liveSummaryEnabled: settings.liveSummaryEnabled,
     finalSummaryEnabled: settings.finalSummaryEnabled,

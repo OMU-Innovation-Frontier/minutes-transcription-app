@@ -128,6 +128,32 @@ describe('Groq correction config and provider factory', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it('sends Luna the registered dictionary and validates its structured correction', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => groqResponse({
+      correctedText: 'Minutes plan',
+      changes: [{ before: 'Minits', after: 'Minutes', reason: 'glossary' }],
+      uncertainParts: [],
+    }));
+    const service = createCorrectionService(loadCorrectionConfig({
+      LLM_CORRECTION_ENABLED: 'true',
+      LLM_CORRECTION_PROVIDER: 'openai',
+      OPENAI_API_KEY: 'test-key',
+      LLM_CORRECTION_GLOSSARY_JSON: '[{"canonical":"Agenda"}]',
+    }), { fetch: fetchMock });
+    const input = request('Minits plan');
+    input.input.glossary = [{ canonical: 'Minutes', aliases: ['Minits'] }];
+    await expect(service.correct(input)).resolves.toMatchObject({
+      status: 'completed', rawText: 'Minits plan', correctedText: 'Minutes plan', provider: 'openai', model: 'gpt-6-luna',
+    });
+    const [endpoint, init] = fetchMock.mock.calls[0]!;
+    expect(endpoint).toBe('https://api.openai.com/v1/chat/completions');
+    const payload = JSON.parse(String(init?.body));
+    expect(payload).toMatchObject({ model: 'gpt-6-luna', store: false, response_format: { type: 'json_schema' } });
+    expect(JSON.parse(payload.messages[1].content).glossary).toMatchObject([
+      { canonical: 'Agenda' }, { canonical: 'Minutes', aliases: ['Minits'] },
+    ]);
+  });
+
   it.each([
     [429, 'rate_limited'],
     [500, 'provider_unavailable'],

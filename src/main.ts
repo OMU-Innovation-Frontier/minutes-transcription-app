@@ -64,6 +64,9 @@ import { createRawSegmentElement, createSentenceElement } from './ui/transcriptV
 import {
   createInitialMeetingSetupDraft,
   createMeetingSettingsSnapshot,
+  parseMeetingGlossary,
+  readMeetingTextPreference,
+  saveMeetingTextPreference,
   loadGroqWhisperModelPreference,
   saveGroqWhisperModelPreference,
   type MeetingExternalProcessingRequirements,
@@ -102,6 +105,13 @@ const elements = {
   summarySheetContent: requiredElement<HTMLElement>('summary-sheet-content'),
   setupSettings: requiredElement<HTMLElement>('meeting-setup-settings'),
   setupGroqModel: requiredElement<HTMLSelectElement>('setup-groq-model'),
+  setupSummaryModel: requiredElement<HTMLSelectElement>('setup-summary-model'),
+  setupCorrectionToggle: requiredElement<HTMLInputElement>('setup-correction-toggle'),
+  setupCorrectionModel: requiredElement<HTMLSelectElement>('setup-correction-model'),
+  setupCorrectionModelField: requiredElement<HTMLElement>('setup-correction-model-field'),
+  setupGlossary: requiredElement<HTMLTextAreaElement>('setup-glossary'),
+  setupGlossarySave: requiredElement<HTMLButtonElement>('setup-glossary-save'),
+  setupGlossaryStatus: requiredElement<HTMLElement>('setup-glossary-status'),
   resumeMeetingButton: requiredElement<HTMLButtonElement>('resume-meeting-button'),
   homeActiveMeeting: requiredElement<HTMLElement>('home-active-meeting'),
   homeHistoryEmpty: requiredElement<HTMLElement>('home-history-empty'),
@@ -267,6 +277,13 @@ let renderedInterimText = '';
 
 const summaryClient = new SummaryHttpClient();
 const correctionClient = new CorrectionHttpClient();
+const lunaSummaryClient = new SummaryHttpClient(undefined, undefined, 'openai');
+const lunaCorrectionClient = new CorrectionHttpClient(undefined, undefined, 'openai');
+let lunaSummaryAvailable = false;
+let lunaCorrectionAvailable = false;
+let meetingCorrectionRequested = true;
+let savedGlossary = readMeetingTextPreference('correction-glossary') ?? '';
+let meetingGlossary = parseMeetingGlossary(savedGlossary);
 const transcriptStore = new TranscriptStore({ onChange: handleTranscriptChange });
 const localEvaluationRecorder = initializeLocalEvaluationRecorder();
 const finalSummaryController = new FinalMeetingSummaryController(() => {
@@ -299,6 +316,8 @@ const meetingShareDialog = initializeMeetingShareDialog({
 });
 
 elements.setupGroqModel.value = loadGroqWhisperModelPreference() ?? '';
+elements.setupCorrectionToggle.checked = readMeetingTextPreference('correction-toggle') !== 'off';
+elements.setupGlossary.value = savedGlossary;
 
 const transcriptionSink: AudioChunkSink = {
   async handle(chunk): Promise<void> {
@@ -335,6 +354,33 @@ elements.setupGroqModel.addEventListener('change', () => {
   renderMeetingSetup();
   if (meetingSetupDraft.transcriptionProvider === 'groq-whisper') saveGroqWhisperModelPreference(meetingSetupDraft.groqModel);
   renderHomeState();
+});
+elements.setupSummaryModel.addEventListener('change', () => {
+  saveMeetingTextPreference('summary-model', elements.setupSummaryModel.value);
+  renderMeetingSetup();
+});
+elements.setupCorrectionModel.addEventListener('change', () => {
+  saveMeetingTextPreference('correction-model', elements.setupCorrectionModel.value);
+  renderMeetingSetup();
+});
+elements.setupCorrectionToggle.addEventListener('change', () => {
+  saveMeetingTextPreference('correction-toggle', elements.setupCorrectionToggle.checked ? 'on' : 'off');
+  renderMeetingSetup();
+});
+elements.setupGlossary.addEventListener('input', () => { elements.setupGlossaryStatus.textContent = ''; });
+elements.setupGlossarySave.addEventListener('click', () => {
+  const text = elements.setupGlossary.value.trim();
+  if (text.split(/\r?\n/).filter((line) => line.trim()).length > 100) {
+    elements.setupGlossaryStatus.textContent = '辞書は100語まで登録できます。';
+    return;
+  }
+  if (text.split(/\r?\n/).some((line) => line.trim() && !line.split(/[,、，]/)[0]?.trim())) {
+    elements.setupGlossaryStatus.textContent = '各行の先頭に正式表記を入力してください。';
+    return;
+  }
+  savedGlossary = text;
+  elements.setupGlossaryStatus.textContent = saveMeetingTextPreference('correction-glossary', text)
+    ? 'このブラウザーに保存しました。' : 'このページで始める会議に適用します。';
 });
 elements.historyToggle.addEventListener('click', () => {
   setHistoryExpanded(elements.historyToggle.getAttribute('aria-expanded') !== 'true');
@@ -426,7 +472,9 @@ function beginMeeting(): void {
   resetMeetingData();
   setSummaryExpanded(false);
   meetingSettingsSnapshot = settings;
-  meetingSummaryExternalAllowed = Boolean(settings.liveSummaryEnabled && setupSummaryStatus?.apiUsed);
+  meetingCorrectionRequested = elements.setupCorrectionToggle.checked;
+  meetingGlossary = parseMeetingGlossary(savedGlossary);
+  meetingSummaryExternalAllowed = Boolean(settings.liveSummaryEnabled && (settings.summaryProvider === 'openai' || setupSummaryStatus?.apiUsed));
   currentMeetingId = createSessionId();
   meetingStartedAt = null;
   meetingEndedAt = null;
@@ -442,13 +490,38 @@ function renderMeetingSetup(): void {
   const selected = elements.setupGroqModel.value;
   const transcriptionProvider = selected === 'soniox' && sonioxRecordingLimitMs ? 'soniox'
     : selected === 'sonix' && sonixRecordingLimitMs ? 'sonix' : 'groq-whisper';
+  const correctionProvider = elements.setupCorrectionModel.value === 'openai' ? 'openai' : undefined;
+  const summaryProvider = elements.setupSummaryModel.value === 'openai' ? 'openai' : undefined;
+  elements.setupCorrectionModelField.hidden = !elements.setupCorrectionToggle.checked;
   meetingSetupDraft = {
     ...meetingSetupDraft,
     transcriptionProvider,
     groqModel: isGroqWhisperModel(selected) ? selected : undefined,
-    correctionEnabled: Boolean(correctionServiceStatus?.enabled),
-    liveSummaryEnabled: Boolean(setupSummaryStatus?.enabled),
+    correctionProvider,
+    summaryProvider,
+    correctionEnabled: elements.setupCorrectionToggle.checked && (correctionProvider ? lunaCorrectionAvailable : Boolean(correctionServiceStatus?.enabled)),
+    liveSummaryEnabled: summaryProvider ? lunaSummaryAvailable : Boolean(setupSummaryStatus?.enabled),
   };
+}
+
+async function loadTextModelAvailability(): Promise<void> {
+  const response = await fetch(new URL('/api/text-models', serverHttpUrl()).href);
+  if (!response.ok || pageUnloading) return;
+  const status: unknown = await response.json();
+  if (!status || typeof status !== 'object' || pageUnloading) return;
+  lunaSummaryAvailable = 'lunaSummary' in status && status.lunaSummary === true;
+  lunaCorrectionAvailable = 'lunaCorrection' in status && status.lunaCorrection === true;
+  for (const [select, available, name] of [
+    [elements.setupSummaryModel, lunaSummaryAvailable, 'summary-model'],
+    [elements.setupCorrectionModel, lunaCorrectionAvailable, 'correction-model'],
+  ] as const) {
+    const option = select.querySelector<HTMLOptionElement>('option[value="openai"]');
+    if (!option || !available) continue;
+    option.hidden = false;
+    option.disabled = false;
+    if (readMeetingTextPreference(name) === 'openai') select.value = 'openai';
+  }
+  renderMeetingSetup();
 }
 
 function refreshSetupSummaryStatus(): Promise<void> {
@@ -529,10 +602,12 @@ async function startSession(): Promise<void> {
   const recordingSessionId = currentSessionId;
   void initialMeetingFeatureStatus.then(() => {
     if (pageUnloading || recordingSessionId !== currentSessionId || captureState !== 'recording' || !meetingSettingsSnapshot || appState.meetingEnded) return;
-    const correctionEnabled = Boolean(correctionServiceStatus?.enabled);
-    const liveSummaryEnabled = Boolean(setupSummaryStatus?.enabled);
+    const lunaCorrection = meetingSettingsSnapshot.correctionProvider === 'openai';
+    const lunaSummary = meetingSettingsSnapshot.summaryProvider === 'openai';
+    const correctionEnabled = meetingCorrectionRequested && (lunaCorrection ? lunaCorrectionAvailable : Boolean(correctionServiceStatus?.enabled));
+    const liveSummaryEnabled = lunaSummary ? lunaSummaryAvailable : Boolean(setupSummaryStatus?.enabled);
     meetingSettingsSnapshot = Object.freeze({ ...meetingSettingsSnapshot, correctionEnabled, liveSummaryEnabled });
-    meetingSummaryExternalAllowed = Boolean(liveSummaryEnabled && setupSummaryStatus?.apiUsed);
+    meetingSummaryExternalAllowed = Boolean(liveSummaryEnabled && (lunaSummary || setupSummaryStatus?.apiUsed));
     if (correctionEnabled) {
       correctionCoordinator = createCorrectionCoordinator(recordingSessionId);
       correctionCoordinators.push(correctionCoordinator);
@@ -779,9 +854,10 @@ async function summarizeNow(): Promise<void> {
 function createSummaryCoordinator(
   meetingId: string,
   allowExternal = meetingSummaryExternalAllowed,
-  expectedProvider = setupSummaryStatus?.provider,
+  expectedProvider = meetingSettingsSnapshot?.summaryProvider ?? setupSummaryStatus?.provider,
 ): IncrementalSummaryCoordinator {
-  return new IncrementalSummaryCoordinator(summaryClient, meetingId, envNumber('VITE_SUMMARY_SENTENCE_BATCH_SIZE', 3), {
+  const client = meetingSettingsSnapshot?.summaryProvider === 'openai' ? lunaSummaryClient : summaryClient;
+  return new IncrementalSummaryCoordinator(client, meetingId, envNumber('VITE_SUMMARY_SENTENCE_BATCH_SIZE', 3), {
     onStatus: renderSummaryStatus,
     onLiveSummary: renderLiveSummary,
     onUsage: renderUsage,
@@ -790,10 +866,11 @@ function createSummaryCoordinator(
 }
 
 function createCorrectionCoordinator(sessionId: string): CorrectionCoordinator {
-  return new CorrectionCoordinator(correctionClient, transcriptStore, sessionId, {
-    onStatus: renderCorrectionStatus,
+  const client = meetingSettingsSnapshot?.correctionProvider === 'openai' ? lunaCorrectionClient : correctionClient;
+  return new CorrectionCoordinator(client, transcriptStore, sessionId, {
+    onStatus: (status) => renderCorrectionStatus(status, client === correctionClient),
     onError: (error) => renderCorrectionWarning(error.message),
-  }, { meetingId: currentMeetingId || sessionId });
+  }, { meetingId: currentMeetingId || sessionId, glossary: meetingGlossary });
 }
 
 function handleTranscriptChange(): void {
@@ -964,8 +1041,8 @@ function scrollToLatestTranscript(): void {
   elements.latestTranscriptButton.hidden = true;
 }
 
-function renderCorrectionStatus(status: CorrectionServiceStatus): void {
-  correctionServiceStatus = status;
+function renderCorrectionStatus(status: CorrectionServiceStatus, updateDefault = true): void {
+  if (updateDefault) correctionServiceStatus = status;
   const presentation = correctionStatusPresentation(status);
   elements.correctionStatus.textContent = presentation.statusText;
   elements.correctionPrivacy.textContent = presentation.privacyText;
@@ -974,13 +1051,15 @@ function renderCorrectionStatus(status: CorrectionServiceStatus): void {
 }
 
 function correctionExternalProcessingRequirements(): MeetingExternalProcessingRequirements {
+  const lunaCorrection = meetingSetupDraft.correctionProvider === 'openai';
+  const lunaSummary = meetingSetupDraft.summaryProvider === 'openai';
   return {
-    correctionStatusKnown: correctionServiceStatus !== null,
-    correctionExternalTransmission: Boolean(correctionServiceStatus?.enabled && correctionServiceStatus.externalTransmission),
-    summaryStatusKnown: setupSummaryStatus !== null,
-    summaryEnabled: setupSummaryStatus?.enabled ?? false,
-    summaryExternalTransmission: Boolean(setupSummaryStatus?.enabled && setupSummaryStatus.apiUsed),
-    summaryProvider: setupSummaryStatus?.provider,
+    correctionStatusKnown: lunaCorrection ? lunaCorrectionAvailable : correctionServiceStatus !== null,
+    correctionExternalTransmission: lunaCorrection ? lunaCorrectionAvailable : Boolean(correctionServiceStatus?.enabled && correctionServiceStatus.externalTransmission),
+    summaryStatusKnown: lunaSummary ? lunaSummaryAvailable : setupSummaryStatus !== null,
+    summaryEnabled: lunaSummary ? lunaSummaryAvailable : (setupSummaryStatus?.enabled ?? false),
+    summaryExternalTransmission: lunaSummary ? lunaSummaryAvailable : Boolean(setupSummaryStatus?.enabled && setupSummaryStatus.apiUsed),
+    summaryProvider: lunaSummary ? 'openai' : setupSummaryStatus?.provider,
   };
 }
 
@@ -1548,15 +1627,15 @@ function openEndMeetingDialog(): void {
   elements.confirmEndMeetingWithSummaryButton.disabled = true;
   elements.endMeetingSummaryStatus.textContent = '最終要約を利用できるか確認しています。';
   elements.endMeetingDialog.hidden = false;
-  void refreshSetupSummaryStatus().then(() => {
+  const status = meetingSettingsSnapshot?.summaryProvider === 'openai'
+    ? lunaSummaryClient.status().catch(() => null)
+    : refreshSetupSummaryStatus().then(() => setupSummaryStatus);
+  void status.then((selectedStatus) => {
     if (pageUnloading || elements.endMeetingDialog.hidden) return;
-    endSummaryStatus = setupSummaryStatus;
+    endSummaryStatus = selectedStatus;
     elements.confirmEndMeetingWithSummaryButton.disabled = !endSummaryStatus?.enabled;
     if (!endSummaryStatus?.enabled) {
       elements.endMeetingSummaryStatus.textContent = '現在は最終要約を利用できません。';
-    } else if (endSummaryStatus.apiUsed) {
-      const destination = endSummaryStatus.provider === 'groq' ? 'Groq' : 'OpenAI';
-      elements.endMeetingSummaryStatus.textContent = `最終要約とTODOを作る場合、文字起こしと途中要約を${destination}に送信します。`;
     } else {
       elements.endMeetingSummaryStatus.textContent = '最終要約とTODOを作成できます。';
     }
@@ -1724,6 +1803,7 @@ function recoverActiveMeeting(): void {
     if (!draft) return;
     currentMeetingId = draft.meetingId;
     meetingSettingsSnapshot = draft.settingsSnapshot;
+    meetingCorrectionRequested = draft.settingsSnapshot.correctionEnabled;
     meetingStartedAt = draft.startedAt === null ? null : Date.parse(draft.startedAt);
     meetingHasRecorded = draft.startedAt !== null;
     meetingTitle = draft.title ?? draft.settingsSnapshot.title;
@@ -1798,3 +1878,4 @@ const initialMeetingFeatureStatus = Promise.allSettled([
   correctionClient.status().then(renderCorrectionStatus).catch((error) => renderCorrectionWarning(getErrorMessage(error))),
   refreshSetupSummaryStatus(),
 ]);
+void loadTextModelAvailability().catch(() => undefined);

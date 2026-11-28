@@ -102,7 +102,7 @@ it('starts either way in one click and saves the title with or without a final s
     const finalRequests = () => request.mock.calls.filter(([url]) => url.endsWith('/final'));
     const summaryButton = button('confirm-end-meeting-with-summary-button');
     await vi.waitFor(() => expect(summaryButton.disabled).toBe(false));
-    expect(document.getElementById('end-meeting-summary-status')?.textContent).toContain('Groqに送信');
+    expect(document.getElementById('end-meeting-summary-status')?.textContent).toBe('最終要約とTODOを作成できます。');
     expect(finalRequests()).toHaveLength(0);
     (withSummary ? summaryButton : button('confirm-end-meeting-button')).click();
     await vi.waitFor(() => expect(document.documentElement.dataset.appView).toBe('meeting-detail'));
@@ -187,18 +187,36 @@ it('recovers an unfinished meeting after reloading without starting recording', 
 });
 
 
-it('summarizes on button press while recording and keeps previous interim summaries', async () => {
+it('uses the selected Luna model for interim and final summaries with correction switched off', async () => {
   vi.resetModules();
   vi.stubGlobal('indexedDB', {});
   let version = 0;
-  const request = vi.fn(async (url: string) => new Response(JSON.stringify(
-    url.endsWith('/live')
-      ? { version: ++version, topic: `Topic ${version}`, keyPoints: [], decisions: [], actionItems: [], openQuestions: [] }
-      : { enabled: true, provider: 'mock', apiUsed: false, intervalSeconds: 10 }
-  ), { status: 200 }));
+  const request = vi.fn(async (url: string, init?: RequestInit) => {
+    const { pathname, searchParams } = new URL(url);
+    let value: object = { enabled: true, provider: searchParams.has('provider') ? 'openai' : 'groq', apiUsed: true, intervalSeconds: 10 };
+    if (pathname === '/api/text-models') value = { lunaSummary: true, lunaCorrection: true };
+    if (pathname === '/api/summary/live' && init?.method === 'POST') value = {
+      version: ++version, topic: `Topic ${version}`, keyPoints: [], decisions: [], actionItems: [], openQuestions: [],
+    };
+    if (pathname === '/api/summary/final' && init?.method === 'POST') value = {
+      version: version + 1, overview: 'Lunaの合成要約', agenda: [], keyPoints: [], decisions: [], unresolvedItems: [], actionItems: [], nextChecks: [],
+    };
+    return new Response(JSON.stringify(value));
+  });
   vi.stubGlobal('fetch', request);
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
+  button('home-settings-button').click();
+  const luna = document.querySelector<HTMLButtonElement>('[aria-label="要約モデル"] [data-value="openai"]')!;
+  await vi.waitFor(() => expect(luna.hidden).toBe(false));
+  luna.click();
+  input('setup-correction-toggle').click();
+  expect(document.getElementById('setup-correction-model-field')?.hidden).toBe(true);
+  const glossary = document.querySelector<HTMLTextAreaElement>('#setup-glossary')!;
+  glossary.value = 'Minutes, ミニッツ';
+  button('setup-glossary-save').click();
+  expect(localStorage.getItem('minutes.correction-glossary')).toBe('Minutes, ミニッツ');
+  button('settings-close-button').click();
   let options!: StartTranscriptionOptions;
   startProvider.mockImplementationOnce(async (value) => { options = value; });
   button('workspace-start-button').click();
@@ -226,6 +244,16 @@ it('summarizes on button press while recording and keeps previous interim summar
   await vi.waitFor(() => expect(button('summarize-now-button').disabled).toBe(false));
   button('summarize-now-button').click();
   await vi.waitFor(() => expect(document.getElementById('interim-summary-history')?.childElementCount).toBe(2));
+  button('end-meeting-button').click();
+  const save = button('confirm-end-meeting-with-summary-button');
+  await vi.waitFor(() => expect(save.disabled).toBe(false));
+  save.click();
+  await vi.waitFor(() => expect(document.body.textContent).toContain('Lunaの合成要約'));
+  const posts = request.mock.calls.filter(([, init]) => init?.method === 'POST');
+  expect(posts.map(([url]) => url.split('/api/')[1])).toEqual([
+    'summary/live?provider=openai', 'summary/live?provider=openai', 'summary/final?provider=openai',
+  ]);
+  expect(posts.every(([, init]) => new Headers(init?.headers).get('x-summary-provider') === 'openai')).toBe(true);
 });
 
 

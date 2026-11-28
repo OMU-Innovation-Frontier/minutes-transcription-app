@@ -26,6 +26,33 @@ async function start(success = true) {
 }
 
 describe('OpenAI summary HTTP boundary with Fake HTTP', () => {
+  it.each([false, true])('exposes Luna only when its key is configured (%s)', async (keyConfigured) => {
+    const server = createTranscriptionServer({
+      config: { ...loadServerConfig({}), port: 0 },
+      textModelEnvironment: {
+        SUMMARY_ENABLED: 'true',
+        LLM_CORRECTION_ENABLED: 'true',
+        LLM_CORRECTION_REMOVE_FILLERS: 'true',
+        ...(keyConfigured ? { OPENAI_API_KEY: 'synthetic-key' } : {}),
+      },
+    });
+    servers.push(server);
+    const address = await server.start();
+    const base = `http://127.0.0.1:${address.port}`;
+    const models = await fetch(`${base}/api/text-models`).then((res) => res.json());
+    expect(models).toEqual({ lunaSummary: keyConfigured, lunaCorrection: keyConfigured });
+    const defaultStatus = await fetch(`${base}/api/summary/status`).then((res) => res.json());
+    expect(defaultStatus).toMatchObject({ enabled: true, provider: 'mock' });
+    const summaryStatus = await fetch(`${base}/api/summary/status?provider=openai`);
+    const correctionStatus = await fetch(`${base}/api/correction/status?provider=openai`);
+    expect(summaryStatus.status).toBe(keyConfigured ? 200 : 409);
+    expect(correctionStatus.status).toBe(keyConfigured ? 200 : 409);
+    if (keyConfigured) {
+      expect(await summaryStatus.json()).toMatchObject({ enabled: true, provider: 'openai' });
+      expect(await correctionStatus.json()).toMatchObject({ enabled: true, provider: 'openai', model: 'gpt-6-luna', removeFillers: true });
+    }
+  });
+
   it('serves a final summary and token-only usage without exposing credentials', async () => {
     const { base, request } = await start();
     const status = await fetch(`${base}/api/summary/status`).then((res) => res.text());

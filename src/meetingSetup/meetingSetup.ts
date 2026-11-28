@@ -1,4 +1,5 @@
 import { isGroqWhisperModel, type GroqWhisperModel } from '../../shared/protocol';
+import type { GlossaryEntry } from '../../shared/correction';
 import type { SpeechToTextProviderKind, TranscriptionLanguage } from '../transcription/types';
 
 export interface MeetingSetupDraft {
@@ -6,6 +7,8 @@ export interface MeetingSetupDraft {
   language: TranscriptionLanguage;
   transcriptionProvider: SpeechToTextProviderKind;
   groqModel?: GroqWhisperModel;
+  summaryProvider?: 'openai';
+  correctionProvider?: 'openai';
   correctionEnabled: boolean;
   liveSummaryEnabled: boolean;
   finalSummaryEnabled: boolean;
@@ -56,6 +59,32 @@ export function createInitialMeetingSetupDraft(provider: SpeechToTextProviderKin
 
 const groqModelPreferenceKey = 'minutes.groq-whisper-model';
 
+type MeetingTextPreference = 'summary-model' | 'correction-model' | 'correction-toggle' | 'correction-glossary';
+
+export function readMeetingTextPreference(name: MeetingTextPreference): string | null {
+  try {
+    return window.localStorage.getItem(`minutes.${name}`);
+  } catch {
+    return null;
+  }
+}
+
+export function saveMeetingTextPreference(name: MeetingTextPreference, value: string): boolean {
+  try {
+    window.localStorage.setItem(`minutes.${name}`, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function parseMeetingGlossary(text: string): GlossaryEntry[] {
+  return text.slice(0, 2000).split(/\r?\n/).flatMap((line) => {
+    const [canonical, ...aliases] = line.split(/[,、，]/).map((term) => term.trim());
+    return canonical ? [{ canonical, aliases: [...new Set(aliases.filter(Boolean))] }] : [];
+  }).slice(0, 100);
+}
+
 export function loadGroqWhisperModelPreference(): GroqWhisperModel | undefined {
   try {
     const model = window.localStorage.getItem(groqModelPreferenceKey);
@@ -101,7 +130,20 @@ export function createMeetingSettingsSnapshot(
 ): MeetingSettingsSnapshot {
   const error = validateMeetingSetupDraft(draft, requirements);
   if (error) throw new Error(error);
-  return Object.freeze({ settingsVersion: 1 as const, title: draft.title.trim(), language: draft.language, transcriptionProvider: draft.transcriptionProvider, ...(draft.groqModel ? { groqModel: draft.groqModel } : {}), correctionEnabled: draft.correctionEnabled, liveSummaryEnabled: draft.liveSummaryEnabled, finalSummaryEnabled: draft.finalSummaryEnabled, historyRetention: 'page-session' as const, createdAt });
+  return Object.freeze({
+    settingsVersion: 1 as const,
+    title: draft.title.trim(),
+    language: draft.language,
+    transcriptionProvider: draft.transcriptionProvider,
+    ...(draft.groqModel ? { groqModel: draft.groqModel } : {}),
+    ...(draft.summaryProvider ? { summaryProvider: draft.summaryProvider } : {}),
+    ...(draft.correctionProvider ? { correctionProvider: draft.correctionProvider } : {}),
+    correctionEnabled: draft.correctionEnabled,
+    liveSummaryEnabled: draft.liveSummaryEnabled,
+    finalSummaryEnabled: draft.finalSummaryEnabled,
+    historyRetention: 'page-session' as const,
+    createdAt,
+  });
 }
 
 export function buildMeetingSetupSummary(

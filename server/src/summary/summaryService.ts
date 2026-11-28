@@ -128,7 +128,7 @@ export class SummaryService {
   }
 }
 
-export function createSummaryService(config: SummaryConfig): SummaryService {
+export function createSummaryService(config: SummaryConfig, usageStore = new ApiUsageStore(config.usageFile)): SummaryService {
   const provider = config.provider === 'openai'
     ? new OpenAISummaryProvider({
         apiKey: config.apiKey,
@@ -145,7 +145,7 @@ export function createSummaryService(config: SummaryConfig): SummaryService {
         maxOutputTokens: config.maxOutputTokens, timeoutMs: config.timeoutMs,
         maxResponseBytes: config.maxResponseBytes, maxInputBytes: config.groqMaxInputBytes,
       }) : new MockSummaryProvider();
-  return new SummaryService(config, provider, new ApiUsageStore(config.usageFile));
+  return new SummaryService(config, provider, usageStore);
 }
 
 export class SummaryServiceError extends Error {

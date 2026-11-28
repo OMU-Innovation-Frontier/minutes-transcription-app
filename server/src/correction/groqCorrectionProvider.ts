@@ -3,7 +3,7 @@ import {
   validateCorrectionOutput,
   type CorrectionInput,
 } from '../../../shared/correction.js';
-import { GROQ_CORRECTION_MODEL } from './config.js';
+import { GROQ_CORRECTION_MODEL, OPENAI_CORRECTION_MODEL } from './config.js';
 import { GroqCorrectionClient, type GroqCorrectionMessage } from './groqCorrectionClient.js';
 import { correctionProviderError, type CorrectionProvider } from './provider.js';
 
@@ -20,12 +20,13 @@ export const GROQ_CORRECTION_SYSTEM_PROMPT = [
 
 export interface GroqCorrectionProviderOptions {
   maxOutputRatio: number;
+  provider?: 'groq' | 'openai';
 }
 
 export class GroqCorrectionProvider implements CorrectionProvider {
-  readonly name = 'groq';
-  readonly model = GROQ_CORRECTION_MODEL;
   readonly externalTransmission = true;
+  get name(): 'groq' | 'openai' { return this.options.provider ?? 'groq'; }
+  get model(): string { return this.name === 'openai' ? OPENAI_CORRECTION_MODEL : GROQ_CORRECTION_MODEL; }
 
   constructor(
     private readonly client: GroqCorrectionClient,
