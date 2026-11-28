@@ -140,11 +140,13 @@ function createUtterance(utterance: PersistedUtterance, index: number): HTMLLIEl
   const text = document.createElement('p');
   text.className = 'utterance__text';
   text.textContent = utterance.correctedText ?? utterance.rawText;
+  const meta = document.createElement('span');
+  meta.className = 'utterance__meta';
   if (utterance.speakerLabel) {
-    const label = document.createElement('small');
-    label.className = 'utterance__meta';
-    label.textContent = utterance.speakerLabel;
-    item.append(label);
+    const label = document.createElement('span');
+    label.className = 'speaker-label';
+    label.textContent = utterance.speakerName ?? utterance.speakerLabel;
+    meta.append(label);
   }
   item.append(text);
 
@@ -152,7 +154,7 @@ function createUtterance(utterance: PersistedUtterance, index: number): HTMLLIEl
     const state = document.createElement('small');
     state.className = 'utterance__state utterance__state--completed';
     state.textContent = '整文済み';
-    item.prepend(state);
+    meta.append(state);
     if (utterance.correctedText !== utterance.rawText) {
       const originalId = `persisted-utterance-original-${index}`;
       const toggle = document.createElement('button');
@@ -174,6 +176,7 @@ function createUtterance(utterance: PersistedUtterance, index: number): HTMLLIEl
       item.append(toggle, raw);
     }
   }
+  if (meta.childElementCount > 0) item.prepend(meta);
   return item;
 }
 

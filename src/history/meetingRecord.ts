@@ -1,4 +1,4 @@
-import { isSpeakerLabel } from '../../shared/sonix';
+import { isSpeakerLabel, isSpeakerName } from '../../shared/sonix';
 import { isGroqWhisperModel } from '../../shared/protocol';
 import type { CorrectionStatus } from '../../shared/correction';
 import { validateFinalMeetingSummary, type FinalMeetingSummary } from '../../shared/summary';
@@ -22,6 +22,7 @@ export interface PersistedUtterance {
   sourceSegmentIds: string[];
   rawText: string;
   speakerLabel?: string;
+  speakerName?: string;
   correctedText: string | null;
   correctionStatus: PersistedCorrectionStatus | null;
   language: TranscriptLanguage;
@@ -116,6 +117,7 @@ export function toPersistedUtterance(sentence: CompletedSentence, sequence: numb
     sourceSegmentIds: [...sentence.rawSegmentIds],
     rawText: sentence.rawText,
     ...(sentence.speakerLabel ? { speakerLabel: sentence.speakerLabel } : {}),
+    ...(sentence.speakerName ? { speakerName: sentence.speakerName } : {}),
     correctedText: correctionSucceeded ? sentence.correction?.correctedText ?? null : null,
     correctionStatus,
     language: sentence.language,
@@ -193,8 +195,9 @@ function parsePersistedUtterance(value: unknown): PersistedUtterance {
   if (!Array.isArray(utterance.sourceSegmentIds)) throw new MeetingRecordValidationError();
   const sourceSegmentIds = utterance.sourceSegmentIds.map(requireIdentifier);
   const rawText = requireText(utterance.rawText);
-  const { speakerLabel } = utterance;
+  const { speakerLabel, speakerName } = utterance;
   if (speakerLabel !== undefined && !isSpeakerLabel(speakerLabel)) throw new MeetingRecordValidationError();
+  if (speakerName !== undefined && (!speakerLabel || !isSpeakerName(speakerName))) throw new MeetingRecordValidationError();
   const correctedText = utterance.correctedText === null ? null : requireText(utterance.correctedText);
   const correctionStatus = utterance.correctionStatus === null
     ? null
@@ -213,6 +216,7 @@ function parsePersistedUtterance(value: unknown): PersistedUtterance {
     sourceSegmentIds,
     rawText,
     ...(speakerLabel === undefined ? {} : { speakerLabel }),
+    ...(speakerName === undefined ? {} : { speakerName }),
     correctedText,
     correctionStatus,
     language: utterance.language,

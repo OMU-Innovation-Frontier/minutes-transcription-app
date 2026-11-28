@@ -1,8 +1,18 @@
+import { isSpeakerLabel, isSpeakerName } from './sonix.js';
+
 export interface SummarySentence {
   id: string;
   text: string;
   startTime: number;
   endTime: number;
+  speakerLabel?: string;
+  speakerName?: string;
+}
+
+export interface SpeakerNameSuggestion {
+  speakerLabel: string;
+  name: string;
+  evidenceSentenceIds: string[];
 }
 
 export interface LiveMeetingSummary {
@@ -17,6 +27,7 @@ export interface LiveMeetingSummary {
     evidenceSentenceIds: string[];
   }>;
   openQuestions: Array<{ text: string; evidenceSentenceIds: string[] }>;
+  speakerNameSuggestions?: SpeakerNameSuggestion[];
 }
 
 export interface FinalMeetingSummary {
@@ -100,6 +111,27 @@ export const LIVE_SUMMARY_JSON_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+export const LIVE_SUMMARY_WITH_SPEAKERS_JSON_SCHEMA = {
+  ...LIVE_SUMMARY_JSON_SCHEMA,
+  properties: {
+    ...LIVE_SUMMARY_JSON_SCHEMA.properties,
+    speakerNameSuggestions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          speakerLabel: { type: 'string' },
+          name: { type: 'string' },
+          evidenceSentenceIds: idArraySchema(),
+        },
+        required: ['speakerLabel', 'name', 'evidenceSentenceIds'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: [...LIVE_SUMMARY_JSON_SCHEMA.required, 'speakerNameSuggestions'],
+} as const;
+
 export const FINAL_SUMMARY_JSON_SCHEMA = {
   type: 'object',
   properties: {
@@ -118,7 +150,20 @@ export const FINAL_SUMMARY_JSON_SCHEMA = {
 
 export function validateLiveMeetingSummary(value: unknown, allowedEvidenceIds?: ReadonlySet<string>): LiveMeetingSummary {
   const object = requireObject(value, 'live summary');
-  requireKeys(object, ['version', 'topic', 'keyPoints', 'decisions', 'actionItems', 'openQuestions']);
+  const keys = ['version', 'topic', 'keyPoints', 'decisions', 'actionItems', 'openQuestions'];
+  if (Object.hasOwn(object, 'speakerNameSuggestions')) {
+    keys.push('speakerNameSuggestions');
+    const suggestions = object.speakerNameSuggestions;
+    if (!Array.isArray(suggestions) || suggestions.length > 26) throw new Error('話者名の候補が不正です。');
+    for (const item of suggestions) {
+      const suggestion = requireObject(item, 'speaker name suggestion');
+      requireKeys(suggestion, ['speakerLabel', 'name', 'evidenceSentenceIds']);
+      if (!isSpeakerLabel(suggestion.speakerLabel) || suggestion.speakerLabel === '話者不明'
+        || !isSpeakerName(suggestion.name)) throw new Error('話者名の候補が不正です。');
+      validateEvidenceIds(suggestion.evidenceSentenceIds, allowedEvidenceIds);
+    }
+  }
+  requireKeys(object, keys);
   requireVersion(object.version);
   if (object.topic !== null) requireText(object.topic, true);
   validateEvidenceItems(object.keyPoints, allowedEvidenceIds);

@@ -2,6 +2,7 @@ import { SummaryProviderError, readBoundedJson, summaryInstructions, collectEvid
 import {
   FINAL_SUMMARY_JSON_SCHEMA,
   LIVE_SUMMARY_JSON_SCHEMA,
+  LIVE_SUMMARY_WITH_SPEAKERS_JSON_SCHEMA,
   validateFinalMeetingSummary,
   validateLiveMeetingSummary,
   type FinalMeetingSummary,
@@ -43,6 +44,8 @@ export class GroqSummaryProvider implements SummaryProvider {
 
   async updateSummary(input: IncrementalSummaryInput): Promise<LiveMeetingSummary> {
     const expectedVersion = (input.previousSummary?.version ?? 0) + 1;
+    const unnamedSpeakers = input.newSentences.filter(sentence => sentence.speakerLabel
+      && sentence.speakerLabel !== '話者不明' && !sentence.speakerName);
     const allowedIds = new Set([
       ...collectEvidenceIds(input.previousSummary),
       ...input.newSentences.map((sentence) => sentence.id),
@@ -52,16 +55,22 @@ export class GroqSummaryProvider implements SummaryProvider {
       'live_summary',
       this.options.liveModel,
       'live_meeting_summary',
-      LIVE_SUMMARY_JSON_SCHEMA,
+      unnamedSpeakers.length ? LIVE_SUMMARY_WITH_SPEAKERS_JSON_SCHEMA : LIVE_SUMMARY_JSON_SCHEMA,
       {
         expectedVersion,
         previousSummary: input.previousSummary,
         newCompletedSentences: input.newSentences,
       },
     );
-    const summary = validateLiveMeetingSummary(value, allowedIds);
+    const summary = validateLiveMeetingSummary(value);
     if (summary.version !== expectedVersion) throw new Error('要約versionが期待値と一致しません。');
-    return summary;
+    if (summary.speakerNameSuggestions) {
+      summary.speakerNameSuggestions = summary.speakerNameSuggestions.filter(suggestion =>
+        suggestion.evidenceSentenceIds.every(id => allowedIds.has(id))
+        && unnamedSpeakers.some(sentence => sentence.speakerLabel === suggestion.speakerLabel
+          && sentence.text.includes(suggestion.name) && suggestion.evidenceSentenceIds.includes(sentence.id)));
+    }
+    return validateLiveMeetingSummary(summary, allowedIds);
   }
 
   async createFinalSummary(input: FinalSummaryInput): Promise<FinalMeetingSummary> {

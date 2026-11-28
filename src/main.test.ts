@@ -112,12 +112,13 @@ it('starts either way in one click and saves the title with or without a final s
     if (withSummary) {
       expect(finalRequests()[0]?.[1]?.headers).toMatchObject({ 'x-summary-provider': 'groq' });
       expect(document.body.textContent).toContain('合成の最終要約');
-      button('detail-settings-button').focus();
-      button('detail-settings-button').click();
+      expect(button('home-settings-button').hidden).toBe(false);
+      button('home-settings-button').focus();
+      button('home-settings-button').click();
       expect(document.getElementById('settings-panel')?.hidden).toBe(false);
       expect(document.getElementById('meeting-setup-settings')?.hidden).toBe(false);
       button('settings-close-button').click();
-      expect(document.activeElement).toBe(button('detail-settings-button'));
+      expect(document.activeElement).toBe(button('home-settings-button'));
       expect(document.documentElement.dataset.appView).toBe('meeting-detail');
     }
     button('detail-home-button').click();
@@ -231,10 +232,17 @@ it('summarizes on button press while recording and keeps previous interim summar
 it('displays Soniox speaker text while recording and saves only confirmed turns', async () => {
   vi.resetModules();
   vi.stubGlobal('indexedDB', {});
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(
-    url.endsWith('/api/transcription/status') ? { sonioxRecordingLimitMs: 600_000 }
-      : { enabled: false, provider: 'mock', apiUsed: false, intervalSeconds: 10 },
-  ))));
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/live')) {
+      const { newSentences } = JSON.parse(String(init?.body));
+      expect(newSentences).toMatchObject([{ speakerLabel: '話者A', text: '合成の確定結果です。山田です。' }]);
+      return new Response(JSON.stringify({ version: 1, topic: null, keyPoints: [], decisions: [], actionItems: [], openQuestions: [],
+        speakerNameSuggestions: [{ speakerLabel: '話者A', name: '山田', evidenceSentenceIds: [newSentences[0].id] }],
+      }));
+    }
+    return new Response(JSON.stringify(url.endsWith('/api/transcription/status') ? { sonioxRecordingLimitMs: 600_000 }
+      : { enabled: true, provider: 'mock', apiUsed: false, intervalSeconds: 10 }));
+  }));
   document.body.innerHTML = readFileSync('index.html', 'utf8');
   await import('./main');
   const sonioxChoice = document.querySelector<HTMLButtonElement>('[role="radio"][data-value="soniox"]')!;
@@ -267,15 +275,25 @@ it('displays Soniox speaker text while recording and saves only confirmed turns'
   expect(document.getElementById('final-transcript')?.textContent).not.toContain('合成の速報');
 
   options.callbacks?.onTranscript?.({
-    ...update, segmentId: 'final', sequence: 1, provider: 'soniox', text: '合成の確定結果', isFinal: true, speakerLabel: '話者A',
+    ...update, segmentId: 'final', sequence: 1, provider: 'soniox', text: '合成の確定結果です。山田です。', isFinal: true, speakerLabel: '話者A',
   });
   options.callbacks?.onTranscript?.({ ...update, segmentId: 'preview', sequence: 2, provider: 'soniox', text: '', isFinal: false });
   expect(document.getElementById('final-transcript')?.textContent).toContain('話者A');
+  await vi.waitFor(() => expect(button('summarize-now-button').disabled).toBe(false));
+  button('summarize-now-button').click();
+  const confirmation = () => document.querySelector<HTMLButtonElement>('#speaker-suggestions button');
+  await vi.waitFor(() => expect(confirmation()).not.toBeNull());
+  const displayedSpeaker = () => document.querySelector('#final-transcript .utterance__meta > span')?.textContent;
+  expect(displayedSpeaker()).toBe('話者A');
+  confirmation()?.click();
+  expect(displayedSpeaker()).toBe('山田');
+  expect(document.getElementById('final-transcript')?.textContent).not.toContain('話者A');
   button('end-meeting-button').click();
   button('confirm-end-meeting-button').click();
   await vi.waitFor(() => expect(document.documentElement.dataset.appView).toBe('meeting-detail'));
   const detail = document.getElementById('detail-transcript')?.textContent;
-  expect(detail).toContain('話者A');
+  expect(detail).toContain('山田');
+  expect(detail).not.toContain('話者A');
   expect(detail).toContain('合成の確定結果');
   expect(detail).not.toContain('合成の速報');
   expect(document.getElementById('interim-text')?.textContent).toBe('');

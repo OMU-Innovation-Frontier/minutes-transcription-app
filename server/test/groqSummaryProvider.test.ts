@@ -49,6 +49,17 @@ describe('Groq meeting summary provider', () => {
     expect(JSON.parse(body.messages[1].content)).toMatchObject({ expectedVersion: 3, previousSummary: previous });
   });
 
+  it('keeps only suggestions supported by a labelled new utterance containing the proposed name', async () => {
+    const valid = { speakerLabel: '話者A', name: '山田', evidenceSentenceIds: ['s1'] };
+    const next = { version: 1, topic: null, keyPoints: [], decisions: [], actionItems: [], openQuestions: [],
+      speakerNameSuggestions: [valid, { ...valid, speakerLabel: '話者B' }, { ...valid, name: '佐藤' }] };
+    const { provider, request } = setup(vi.fn<typeof fetch>().mockResolvedValue(response({ ...envelope(), choices: [choice(next)] })));
+    const newSentences = [{ ...input.sentences[0]!, text: '山田です。', speakerLabel: '話者A' }];
+    expect((await provider.updateSummary({ meetingId: input.meetingId, previousSummary: null, newSentences })).speakerNameSuggestions).toEqual([valid]);
+    const body = JSON.parse(String(request.mock.calls[0]?.[1]?.body));
+    expect(body.response_format.json_schema.schema.required).toContain('speakerNameSuggestions');
+  });
+
   it.each([401, 403, 429, 500])('does not retry HTTP %i or expose provider details', async (status) => {
     const { provider, request } = setup(vi.fn<typeof fetch>().mockResolvedValue(new Response('private provider details', { status })));
     await expect(provider.createFinalSummary(input)).rejects.toMatchObject({ code: status === 429 ? 'rate_limited' : 'groq_request_failed' });

@@ -63,6 +63,7 @@ export interface RawTranscriptSegment {
   endTime?: number;
   language: TranscriptLanguage;
   speakerLabel?: string;
+  speakerName?: string;
   provider: string;
   revision: number;
 }
@@ -88,6 +89,7 @@ export interface CompletedSentence {
   endTime: number;
   completionReason: SentenceCompletionReason;
   speakerLabel?: string;
+  speakerName?: string;
   correction?: TranscriptCorrection;
 }
 

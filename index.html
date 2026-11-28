@@ -93,6 +93,7 @@
                     <span id="summary-provider-status" class="subtle-status">要約を確認中</span>
                     <p id="manual-summary-status" role="status" aria-live="polite"></p>
                     <div class="panel-scroll" tabindex="0" role="region" aria-label="途中要約の内容">
+                      <section id="speaker-suggestions" aria-label="話者名の候補" hidden></section>
                       <details id="live-summary-details" class="summary-details" open>
                         <summary>現在の簡易要約</summary>
                         <div id="summary-empty" class="summary-empty">
@@ -138,7 +139,6 @@
                 <p id="detail-date" class="detail-date"></p>
               </div>
               <div class="detail-header__actions">
-                <button id="detail-settings-button" class="back-button" type="button" aria-haspopup="dialog" aria-controls="settings-panel" aria-label="設定">設定</button>
                 <button id="detail-share-button" class="secondary-button" type="button" aria-haspopup="dialog" hidden>共有</button>
                 <button id="detail-home-button" class="back-button" type="button">閉じる</button>
               </div>

@@ -5,7 +5,7 @@ import './ui/workspace.css';
 import { initializeWorkspacePresentation } from './ui/workspacePresentation';
 import { downloadMeetingFile } from './history/meetingExport';
 import { initializeMeetingShareDialog } from './history/meetingShareDialog';
-import type { LiveMeetingSummary, MeetingUsageSummary } from '../shared/summary';
+import type { LiveMeetingSummary, MeetingUsageSummary, SpeakerNameSuggestion } from '../shared/summary';
 import type { CorrectionServiceStatus } from '../shared/correction';
 import { AudioCapture } from './audio/audioCapture';
 import type { AudioChunkSink, CaptureState, MicrophoneError } from './audio/types';
@@ -197,6 +197,7 @@ const elements = {
   summarizeNowButton: requiredElement<HTMLButtonElement>('summarize-now-button'),
   manualSummaryStatus: requiredElement<HTMLElement>('manual-summary-status'),
   interimSummaryHistory: requiredElement<HTMLElement>('interim-summary-history'),
+  speakerSuggestions: requiredElement<HTMLElement>('speaker-suggestions'),
   summaryProviderStatus: requiredElement<HTMLElement>('summary-provider-status'),
   summaryWarning: requiredElement<HTMLElement>('summary-warning'),
   summaryEmpty: requiredElement<HTMLElement>('summary-empty'),
@@ -256,6 +257,7 @@ let correctionCoordinator: CorrectionCoordinator | null = null;
 let correctionServiceStatus: CorrectionServiceStatus | null = null;
 const correctionCoordinators: CorrectionCoordinator[] = [];
 let latestLiveSummary: LiveMeetingSummary | null = null;
+const pendingSpeakerNames = new Map<string, SpeakerNameSuggestion>();
 let latestSummaryStatus: SummaryStatus | null = null;
 let setupSummaryStatus: SummaryStatus | null = null;
 let meetingSummaryExternalAllowed = false;
@@ -370,7 +372,6 @@ elements.confirmDeleteMeetingHistoryButton.addEventListener('click', () => {
 });
 elements.retryDeleteMeetingHistoryButton.addEventListener('click', retryDeleteMeetingHistory);
 elements.homeSettingsButton.addEventListener('click', () => openSettings());
-requiredElement<HTMLButtonElement>('detail-settings-button').addEventListener('click', openSettings);
 elements.settingsCloseButton.addEventListener('click', closeSettings);
 elements.startButton.addEventListener('click', () => {
   if (captureState === 'recording') void pauseSession();
@@ -997,6 +998,11 @@ function renderSummaryStatus(status: SummaryStatus): void {
 
 function renderLiveSummary(summary: LiveMeetingSummary): void {
   latestLiveSummary = summary;
+  for (const suggestion of summary.speakerNameSuggestions ?? []) {
+    pendingSpeakerNames.set(suggestion.speakerLabel, suggestion);
+  }
+  renderSpeakerSuggestions();
+  if (!elements.speakerSuggestions.hidden) setSummaryExpanded(true);
   const presentation = presentLiveSummary(summary);
   elements.summaryEmpty.hidden = !presentation.empty;
   elements.summaryContent.hidden = presentation.empty;
@@ -1016,7 +1022,44 @@ function renderLiveSummary(summary: LiveMeetingSummary): void {
   renderDetailView();
 }
 
+function renderSpeakerSuggestions(): void {
+  const panel = elements.speakerSuggestions;
+  panel.replaceChildren();
+  const sentences = transcriptStore.snapshot().completedSentences;
+  const alreadyNamed = new Set(sentences.filter(sentence => sentence.speakerName).map(sentence => sentence.speakerLabel));
+  const byId = new Map(sentences.map(sentence => [sentence.id, sentence]));
+  const meetingId = currentMeetingId;
+  for (const [label, suggestion] of pendingSpeakerNames) {
+    if (alreadyNamed.has(label)) continue;
+    const evidence = suggestion.evidenceSentenceIds.map(id => byId.get(id))
+      .find(sentence => sentence?.speakerLabel === label && sentence.rawText.includes(suggestion.name));
+    if (!evidence) continue;
+    const row = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = `${label}の候補：${suggestion.name}`;
+    const quote = document.createElement('p');
+    quote.textContent = evidence.rawText.slice(0, 200);
+    const accept = document.createElement('button');
+    accept.type = 'button';
+    accept.className = 'secondary-button';
+    accept.textContent = '名前を確定';
+    accept.setAttribute('aria-label', `${label}を${suggestion.name}として確定`);
+    accept.addEventListener('click', () => {
+      if (meetingId !== currentMeetingId || appState.meetingEnded || !transcriptStore.confirmSpeakerName(label, suggestion.name)) return;
+      pendingSpeakerNames.delete(label);
+      renderSpeakerSuggestions();
+      elements.summaryToggleButton.focus();
+    });
+    row.append(title, quote, accept);
+    panel.append(row);
+  }
+  panel.hidden = panel.childElementCount === 0;
+}
+
 function resetSummaryView(): void {
+  pendingSpeakerNames.clear();
+  elements.speakerSuggestions.replaceChildren();
+  elements.speakerSuggestions.hidden = true;
   elements.interimSummaryHistory.replaceChildren();
   elements.summaryEmpty.hidden = false;
   elements.summaryContent.hidden = true;
@@ -1124,7 +1167,7 @@ function renderHomeState(): void {
   elements.homeActiveMeeting.hidden = !active;
   elements.newMeetingButton.hidden = active;
   elements.homeTitle.textContent = active ? '会議を続ける' : '新しい議事録';
-  elements.homeSettingsButton.hidden = appState.view !== 'home';
+  elements.homeSettingsButton.hidden = appState.view === 'meeting';
   const startLabel = active ? '進行中の会議へ戻る' : '新規会議';
   elements.workspaceStartButton.setAttribute('aria-label', startLabel);
   elements.workspaceStartButton.title = startLabel;
@@ -1692,6 +1735,7 @@ function recoverActiveMeeting(): void {
       rawSegmentIds: utterance.sourceSegmentIds,
       rawText: utterance.rawText,
       ...(utterance.speakerLabel ? { speakerLabel: utterance.speakerLabel } : {}),
+      ...(utterance.speakerName ? { speakerName: utterance.speakerName } : {}),
       displayText: utterance.correctedText ?? utterance.rawText,
       revision: utterance.revision,
       language: utterance.language,

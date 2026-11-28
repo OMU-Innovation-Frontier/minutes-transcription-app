@@ -1,4 +1,5 @@
 import { SentenceAssembler } from './sentenceAssembler';
+import { isSpeakerName } from '../../shared/sonix';
 import type { TranscriptCorrection } from '../../shared/correction';
 import type {
   CompletedSentence,
@@ -45,6 +46,7 @@ export class TranscriptStore {
   private finalSegments: TranscriptSegment[] = [];
   private rawSegments: RawTranscriptSegment[] = [];
   private completedSentences: CompletedSentence[] = [];
+  private readonly speakerNames = new Map<string, string>();
   private interim: TranscriptSegment | null = null;
   private lastSequence = -1;
   private readonly finalIds = new Set<string>();
@@ -81,6 +83,9 @@ export class TranscriptStore {
 
   restoreSentences(sentences: readonly CompletedSentence[]): void {
     this.clear();
+    for (const { speakerLabel, speakerName } of sentences) {
+      if (speakerLabel && speakerName) this.speakerNames.set(speakerLabel, speakerName);
+    }
     this.completedSentences = structuredClone([...sentences]);
     this.rawSegments = sentences.map((sentence) => ({
       id: sentence.id, sessionId: sentence.sessionId, text: sentence.rawText,
@@ -95,6 +100,7 @@ export class TranscriptStore {
     this.finalSegments = [];
     this.rawSegments = [];
     this.completedSentences = [];
+    this.speakerNames.clear();
     this.interim = null;
   }
 
@@ -178,11 +184,24 @@ export class TranscriptStore {
     return {
       sessionId: this.sessionId,
       finalSegments: this.finalSegments,
-      rawSegments: this.rawSegments,
-      completedSentences: this.completedSentences,
+      rawSegments: this.speakerNames.size ? this.rawSegments.map(segment => this.withSpeakerName(segment)) : this.rawSegments,
+      completedSentences: this.speakerNames.size ? this.completedSentences.map(sentence => this.withSpeakerName(sentence)) : this.completedSentences,
       interim: this.interim,
       interimDisplayText: `${this.assembler.pendingText}${separator}${interimText}`,
     };
+  }
+
+  confirmSpeakerName(speakerLabel: string, name: string): boolean {
+    if (speakerLabel === '話者不明' || !isSpeakerName(name)
+      || !this.completedSentences.some(sentence => sentence.speakerLabel === speakerLabel)) return false;
+    this.speakerNames.set(speakerLabel, name);
+    this.options.onChange?.();
+    return true;
+  }
+
+  private withSpeakerName<T extends { speakerLabel?: string }>(segment: T): T {
+    const speakerName = segment.speakerLabel && this.speakerNames.get(segment.speakerLabel);
+    return speakerName ? { ...segment, speakerName } : segment;
   }
 
   private upsertRaw(segment: RawTranscriptSegment): void {

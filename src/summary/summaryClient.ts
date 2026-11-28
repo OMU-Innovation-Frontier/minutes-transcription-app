@@ -238,7 +238,9 @@ export function toSummarySentence(sentence: CompletedSentence): SummarySentence 
     && correction.correctedText.trim()
     ? correction.correctedText
     : sentence.rawText;
-  return { id: sentence.id, text, startTime: sentence.startTime, endTime: sentence.endTime };
+  return { id: sentence.id, text, startTime: sentence.startTime, endTime: sentence.endTime,
+    ...(sentence.speakerLabel ? { speakerLabel: sentence.speakerLabel } : {}),
+    ...(sentence.speakerName ? { speakerName: sentence.speakerName } : {}) };
 }
 
 export function toUniqueSummarySentences(sentences: readonly CompletedSentence[]): SummarySentence[] {
