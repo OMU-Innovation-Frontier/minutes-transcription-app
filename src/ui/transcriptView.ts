@@ -47,7 +47,8 @@ export function createSentenceElement(
   meta.append(time);
   if (sentence.speakerLabel) {
     const label = document.createElement('span');
-    label.textContent = sentence.speakerLabel;
+    label.className = 'speaker-label';
+    label.textContent = sentence.speakerName ?? sentence.speakerLabel;
     meta.append(label);
   }
   meta.append(createStateNote(presentation.status, presentation.uncertainParts.length));
@@ -138,7 +139,8 @@ export function createRawSegmentElement(
   text.textContent = segment.text;
   const meta = document.createElement('small');
   meta.className = 'utterance__meta';
-  meta.textContent = `${timeFormatter(segment.startTime)}・${segment.speakerLabel ? `${segment.speakerLabel}・` : ''}${formatLanguage(segment.language)}`;
+  const speaker = segment.speakerName ?? segment.speakerLabel;
+  meta.textContent = `${timeFormatter(segment.startTime)}・${speaker ? `${speaker}・` : ''}${formatLanguage(segment.language)}`;
   item.append(meta, text);
   return item;
 }

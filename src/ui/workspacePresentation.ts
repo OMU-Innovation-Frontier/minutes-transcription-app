@@ -35,7 +35,7 @@ export function createWorkspaceIcon(name: Icon): SVGSVGElement {
 }
 
 function iconFor(button: HTMLButtonElement, label: string): Icon {
-  if (button.id === 'home-settings-button' || button.id === 'detail-settings-button') return 'settings';
+  if (button.id === 'home-settings-button') return 'settings';
   if (button.id.includes('summary-toggle')) return 'chevron';
   if (/削除|クリア/.test(label)) return 'trash';
   if (/再試行|再読み込み|再接続|再生成|再作成/.test(label)) return 'refresh';

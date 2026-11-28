@@ -1,4 +1,5 @@
 import { validateLiveMeetingSummary, type FinalSummaryInput, type IncrementalSummaryInput } from '../../../shared/summary.js';
+import { isSpeakerLabel, isSpeakerName } from '../../../shared/sonix.js';
 
 // Whitelist request data before it reaches an external provider. Do not send arbitrary request fields.
 export function validateSummaryInput(value: unknown, final: true): FinalSummaryInput;
@@ -15,7 +16,10 @@ export function validateSummaryInput(value: unknown, final: boolean): FinalSumma
   const ids = new Set<string>();
   const sentences = items.map((item) => {
     const sentence = record(item);
-    exactKeys(sentence, ['id', 'text', 'startTime', 'endTime']);
+    exactKeys(sentence, ['id', 'text', 'startTime', 'endTime', ...['speakerLabel', 'speakerName'].filter(key => Object.hasOwn(sentence, key))]);
+    const { speakerLabel, speakerName } = sentence;
+    if (speakerLabel !== undefined && !isSpeakerLabel(speakerLabel)
+      || speakerName !== undefined && (!isSpeakerLabel(speakerLabel) || !isSpeakerName(speakerName))) throw new Error('invalid speaker');
     if (typeof sentence.id !== 'string' || !sentence.id.trim() || sentence.id.length > 256 || ids.has(sentence.id)
       || typeof sentence.text !== 'string' || !sentence.text.trim() || sentence.text.length > 20_000
       || typeof sentence.startTime !== 'number' || !Number.isFinite(sentence.startTime) || sentence.startTime < 0
@@ -23,7 +27,8 @@ export function validateSummaryInput(value: unknown, final: boolean): FinalSumma
     ids.add(sentence.id);
     chars += sentence.text.length;
     if (chars > 150_000) throw new Error('input too large');
-    return { id: sentence.id, text: sentence.text, startTime: sentence.startTime, endTime: sentence.endTime };
+    return { id: sentence.id, text: sentence.text, startTime: sentence.startTime, endTime: sentence.endTime,
+      ...(speakerLabel === undefined ? {} : { speakerLabel }), ...(speakerName === undefined ? {} : { speakerName }) };
   });
   const summary = object[summaryKey] === null ? null : validateLiveMeetingSummary(object[summaryKey], final ? ids : undefined);
   return final

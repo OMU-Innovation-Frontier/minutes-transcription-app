@@ -59,6 +59,7 @@ body { overflow: hidden; }
 .transcript-list { gap: 1.75rem; }
 .transcript-item { font-size: 1.05rem; line-height: 1.85; }
 .utterance__meta, .interim-transcript span { font-weight: 500; }
+.speaker-label { font: inherit; overflow-wrap: anywhere; }
 .utterance__state { border-radius: 999px; }
 .utterance__detail-row strong, .utterance__uncertain strong { font-size: 0.85rem; font-weight: 500; }
 #latest-transcript-button { position: absolute; right: 1.5rem; bottom: 5.25rem; z-index: 30; background: var(--surface); box-shadow: 0 6px 24px rgb(23 32 51 / 12%); border-radius: 50%; }
@@ -78,6 +79,10 @@ body { overflow: hidden; }
 #summary-sheet h2, .detail-summary h2 { flex: 1; margin: 0; font-size: 1rem; font-weight: 600; }
 .summary-sheet-content { flex: 1; min-height: 0; padding-bottom: 1.5rem; }
 .summary-sheet-content > .panel-scroll { padding-bottom: 7rem; }
+#speaker-suggestions { margin: 0.75rem 0; }
+#speaker-suggestions > div { padding: 0.75rem; border-radius: 0.75rem; background: var(--surface-soft); }
+#speaker-suggestions > div + div { margin-top: 0.5rem; }
+#speaker-suggestions p { margin: 0.35rem 0; overflow-wrap: anywhere; }
 .detail-summary > .panel-scroll { padding-bottom: 1.5rem; }
 .summary-toggle[aria-expanded="true"] svg, #detail-summary-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .summary-toggle svg, #detail-summary-toggle svg { transition: transform 200ms ease; }
